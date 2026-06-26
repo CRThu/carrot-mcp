@@ -120,7 +120,7 @@ if "!DO_GIT!"=="y" (
     
     echo Tagging: %PKG_NAME%@%EXPECTED%
     git tag %PKG_NAME%@%EXPECTED%
-    git push --tags
+    git push && git push --tags
     echo.
     echo Done^!
 ) else (
