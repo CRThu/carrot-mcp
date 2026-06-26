@@ -37,6 +37,9 @@ uv sync --all-packages
 # Run tests
 uv run pytest
 
+# Run tests for specific server
+uv run pytest tests/serial/test_serial.py -v
+
 # Run servers
 uv run carrot-mcp ds
 uv run carrot-mcp serial
@@ -50,6 +53,22 @@ uv run python -m carrot_mcp_ds
 - Use type hints
 - Follow existing patterns in the codebase
 - Each MCP server follows the same structure: server.py with FastMCP
+- All tools return dict with `{"status": "ok"|"error", ...}` format
+- Each server implements a `version` tool using `importlib.metadata.version`
+- Version is read from `pyproject.toml` — do NOT hardcode `__version__` in `__init__.py`
+- **Test directories must NOT have `__init__.py`** — it shadows the `serial` package from pyserial
+
+## Serial MCP Server Tools
+
+| Tool | Description |
+|------|-------------|
+| `version` | Get server version info |
+| `list` | List available serial ports |
+| `open` | Open a serial port (baudrate, parity, timeouts) |
+| `close` | Close a serial port |
+| `read` | Blocking read with timeout |
+| `recv` | Non-blocking read from buffer |
+| `write` | Write data (hex or ascii with escape support) |
 
 ## Adding a New MCP Server
 
@@ -63,8 +82,9 @@ uv run python -m carrot_mcp_ds
    <name> = "carrot_mcp_<name>.server:mcp"
    ```
 3. Create `src/carrot_mcp_<name>/server.py` with FastMCP
-4. Add to root `pyproject.toml` dependencies and uv.sources
-5. Write tests in `tests/<name>/`
+4. Add `version` tool using `importlib.metadata.version`
+5. Add to root `pyproject.toml` dependencies and uv.sources
+6. Write tests in `tests/<name>/`
 
 CLI auto-discovers servers via entry points - no need to update cli.py.
 

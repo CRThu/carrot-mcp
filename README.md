@@ -43,9 +43,9 @@ pip install carrot-mcp-nfc
 
 ```bash
 # Run a specific server directly (no install needed)
-uvx carrot-mcp-ds
-uvx carrot-mcp-serial
-uvx carrot-mcp-nfc
+uvx carrot-mcp-ds@latest
+uvx carrot-mcp-serial@latest
+uvx carrot-mcp-nfc@latest
 ```
 
 ### CLI
@@ -79,6 +79,18 @@ python -m carrot_mcp_nfc
 | Serial | `carrot-mcp-serial` | Serial port MCP server |
 | NFC | `carrot-mcp-nfc` | NFC reader MCP server |
 
+## Serial MCP Tools
+
+| Tool | Description |
+|------|-------------|
+| `version` | Get server version info |
+| `list` | List available serial ports |
+| `open` | Open a serial port (baudrate, parity, timeouts) |
+| `close` | Close a serial port |
+| `read` | Blocking read with timeout |
+| `recv` | Non-blocking read from buffer |
+| `write` | Write data (hex or ascii with escape support) |
+
 ## MCP Configuration
 
 Add to your MCP client config (e.g., Claude Desktop):
@@ -88,15 +100,15 @@ Add to your MCP client config (e.g., Claude Desktop):
   "mcpServers": {
     "carrot-ds": {
       "command": "uvx",
-      "args": ["carrot-mcp-ds"]
+      "args": ["carrot-mcp-ds@latest"]
     },
     "carrot-serial": {
       "command": "uvx",
-      "args": ["carrot-mcp-serial"]
+      "args": ["carrot-mcp-serial@latest"]
     },
     "carrot-nfc": {
       "command": "uvx",
-      "args": ["carrot-mcp-nfc"]
+      "args": ["carrot-mcp-nfc@latest"]
     }
   }
 }
