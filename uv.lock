@@ -115,7 +115,7 @@ requires-dist = [{ name = "mcp" }]
 
 [[package]]
 name = "carrot-mcp-nfc"
-version = "0.0.1"
+version = "0.0.2"
 source = { editable = "packages/carrot-mcp-nfc" }
 
 [[package]]
