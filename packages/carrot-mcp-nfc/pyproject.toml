@@ -4,7 +4,9 @@ version = "0.0.2"
 description = "Carrot MCP NFC Server"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+    "mcp",
+]
 
 [project.scripts]
 carrot-mcp-nfc = "carrot_mcp_nfc.server:main"

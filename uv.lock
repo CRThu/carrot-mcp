@@ -117,11 +117,23 @@ requires-dist = [{ name = "mcp" }]
 name = "carrot-mcp-nfc"
 version = "0.0.2"
 source = { editable = "packages/carrot-mcp-nfc" }
+dependencies = [
+    { name = "mcp" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "mcp" }]
 
 [[package]]
 name = "carrot-mcp-serial"
 version = "0.0.2"
 source = { editable = "packages/carrot-mcp-serial" }
+dependencies = [
+    { name = "mcp" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "mcp" }]
 
 [[package]]
 name = "certifi"

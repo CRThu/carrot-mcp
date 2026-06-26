@@ -1,5 +1,7 @@
 """Carrot MCP DS Server"""
 
+import sys
+
 from mcp.server.fastmcp import FastMCP
 
 mcp = FastMCP("carrot-mcp-ds")
@@ -12,6 +14,7 @@ def hello(name: str = "World") -> str:
 
 
 def main():
+    print("carrot-mcp-ds server ready", file=sys.stderr)
     mcp.run()
 
 

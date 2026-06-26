@@ -4,7 +4,9 @@ version = "0.0.2"
 description = "Carrot MCP Serial Server"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+    "mcp",
+]
 
 [project.scripts]
 carrot-mcp-serial = "carrot_mcp_serial.server:main"
