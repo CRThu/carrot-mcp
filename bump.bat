@@ -120,11 +120,13 @@ if "!DO_GIT!"=="y" (
     
     echo Tagging: %PKG_NAME%@%EXPECTED%
     git tag %PKG_NAME%@%EXPECTED%
+    git push --tags
     echo.
-    echo Done! Push with: git push --tags
+    echo Done^!
 ) else (
     echo.
-    echo Done! Version bumped. Commit manually.
+    echo Done^! Version bumped. Commit manually.
 )
 
 endlocal
+
