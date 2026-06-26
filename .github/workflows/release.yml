@@ -1,0 +1,59 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "*@*"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse tag
+        id: tag
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          PKG="${TAG%@*}"
+          VER="${TAG#*@}"
+          echo "package=$PKG" >> $GITHUB_OUTPUT
+          echo "version=$VER" >> $GITHUB_OUTPUT
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: uv sync --all-packages
+
+      - name: Verify version
+        run: |
+          ACTUAL=$(uv version --short --package ${{ steps.tag.outputs.package }})
+          if [ "$ACTUAL" != "${{ steps.tag.outputs.version }}" ]; then
+            echo "Version mismatch: tag=${{ steps.tag.outputs.version }} actual=$ACTUAL"
+            exit 1
+          fi
+
+      - name: Build package
+        run: uv build --package ${{ steps.tag.outputs.package }}
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_TOKEN }}
+          packages-dir: packages/${{ steps.tag.outputs.package }}/dist/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ steps.tag.outputs.package }} ${{ steps.tag.outputs.version }}
+          generate_release_notes: true
+          files: packages/${{ steps.tag.outputs.package }}/dist/*

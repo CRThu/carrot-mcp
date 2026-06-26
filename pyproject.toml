@@ -1,0 +1,51 @@
+[project]
+name = "carrot-mcp"
+version = "0.0.1"
+description = "Carrot MCP - A collection of MCP servers"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+dependencies = [
+    "carrot-mcp-ds",
+    "carrot-mcp-serial",
+    "carrot-mcp-nfc",
+]
+
+[project.optional-dependencies]
+ds = ["carrot-mcp-ds"]
+serial = ["carrot-mcp-serial"]
+nfc = ["carrot-mcp-nfc"]
+all = [
+    "carrot-mcp-ds",
+    "carrot-mcp-serial",
+    "carrot-mcp-nfc",
+]
+dev = [
+    "pytest>=7.0",
+]
+
+[project.scripts]
+carrot-mcp = "carrot_mcp.cli:main"
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+carrot-mcp-serial = { workspace = true }
+carrot-mcp-nfc = { workspace = true }
+carrot-mcp-ds = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/carrot_mcp"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
