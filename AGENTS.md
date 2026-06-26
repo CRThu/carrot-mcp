@@ -57,18 +57,38 @@ uv run python -m carrot_mcp_ds
 - Each server implements a `version` tool using `importlib.metadata.version`
 - Version is read from `pyproject.toml` — do NOT hardcode `__version__` in `__init__.py`
 - **Test directories must NOT have `__init__.py`** — it shadows the `serial` package from pyserial
+- 修改代码（函数名、工具名等）后，必须同步更新 `AGENTS.md` 和各包的 `README.md`，并运行 `uv run pytest` 验证
 
 ## Serial MCP Server Tools
 
 | Tool | Description |
 |------|-------------|
 | `version` | Get server version info |
-| `list` | List available serial ports |
-| `open` | Open a serial port (baudrate, parity, timeouts) |
+| `list_ports` | List available serial ports |
+| `open` | Open a serial port (baudrate, parity, timeouts, buffer_size) |
 | `close` | Close a serial port |
 | `read` | Blocking read with timeout |
 | `recv` | Non-blocking read from buffer |
 | `write` | Write data (hex or ascii with escape support) |
+| `script` | Execute a sequence of serial operations (write/read/wait/flush) |
+
+### Script Tool Details
+
+`script` supports sequential operations with `fmt` as top-level param (shared by all steps).
+
+Read step params (all optional):
+- `size`: Max bytes to read (default 256)
+- `timeout`: Read timeout in seconds (default 1.0)
+- `expect`: Expected data for matching (default None)
+- `on_mismatch`: "stop" (default) or "continue" - controls script behavior on expect mismatch
+
+Example:
+```json
+[
+  {"op": "write", "data": "AA"},
+  {"op": "read", "size": 256, "timeout": 1.0, "expect": "BB", "on_mismatch": "stop"}
+]
+```
 
 ## Adding a New MCP Server
 
