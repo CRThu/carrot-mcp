@@ -48,7 +48,6 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_TOKEN }}
-          packages-dir: packages/${{ steps.tag.outputs.package }}/dist/
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -56,4 +55,4 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: ${{ steps.tag.outputs.package }}@${{ steps.tag.outputs.version }}
           generate_release_notes: true
-          files: packages/${{ steps.tag.outputs.package }}/dist/*
+          files: dist/*
