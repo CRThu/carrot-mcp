@@ -126,7 +126,7 @@ requires-dist = [{ name = "mcp" }]
 
 [[package]]
 name = "carrot-mcp-serial"
-version = "0.0.3"
+version = "0.1.0"
 source = { editable = "packages/carrot-mcp-serial" }
 dependencies = [
     { name = "mcp" },
