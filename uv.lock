@@ -120,7 +120,7 @@ source = { editable = "packages/carrot-mcp-nfc" }
 
 [[package]]
 name = "carrot-mcp-serial"
-version = "0.0.1"
+version = "0.0.2"
 source = { editable = "packages/carrot-mcp-serial" }
 
 [[package]]
