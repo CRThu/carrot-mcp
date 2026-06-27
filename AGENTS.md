@@ -180,8 +180,10 @@ Hardware Layer (PN532 / CLRC663 via serial)
 - Single reader session managed via module-level `_reader` / `_connected` state
 - `_cleanup()` registered via `atexit` for safe shutdown
 - `find()` supports both high-level (`reader.find()`) and low-level (manual anticollision) modes
+- `find(low_level=True)` performs multi-cascade anticollision with per-step exception handling
 - `transceive()` exposes `last_tx_bits` for non-byte-aligned commands (e.g. REQA 7 bits)
 - `exchange()` uses InDataExchange with auto CRC (simpler for card-level operations)
+- `script` hex validation is done inside each handler (consistent "Invalid hex string" errors); no pre-validation layer
 - Trace output captured via loguru sink, returned as JSON via `trace_get()`
 
 ## Adding a New MCP Server

@@ -869,3 +869,149 @@ def test_script_anticoll_invalid_hex_prefix():
         assert "Invalid hex" in result[0]["message"]
     finally:
         _teardown()
+
+
+# --- find low_level multi-cascade ---
+
+
+def test_find_low_level_multi_cascade():
+    mock = _make_mock_reader()
+    mock.reqa.return_value = MockResponse(b"\x44\x00")
+    mock.anticoll.side_effect = [
+        MockAnticollResponse(b"\x88\x01\x02\x03\x04", bits=32),
+        MockAnticollResponse(b"\x04\xAA\xBB\xCC\x00", bits=32),
+    ]
+    mock.select.return_value = MockSelectResponse([0x08])
+    _setup(mock)
+    try:
+        result = find(low_level=True)
+        assert result["status"] == "ok"
+        assert result["uid"] == "01020304AABBCC"
+        assert result["atq"] == "4400"
+        assert result["sak"] == "0x8"
+        assert mock.anticoll.call_count == 2
+        mock.anticoll.assert_any_call(cl_level=1, nvb=0x20)
+        mock.anticoll.assert_any_call(cl_level=2, nvb=0x20)
+    finally:
+        _teardown()
+
+
+def test_find_low_level_anticoll_fails():
+    mock = _make_mock_reader()
+    mock.reqa.return_value = MockResponse(b"\x44\x00")
+    mock.anticoll.side_effect = RuntimeError("hw error")
+    _setup(mock)
+    try:
+        result = find(low_level=True)
+        assert result["status"] == "error"
+    finally:
+        _teardown()
+
+
+def test_find_low_level_select_fails():
+    mock = _make_mock_reader()
+    mock.reqa.return_value = MockResponse(b"\x44\x00")
+    mock.anticoll.return_value = MockAnticollResponse(b"\x04\xAA\xBB\xCC\x00", bits=32)
+    mock.select.side_effect = RuntimeError("hw error")
+    _setup(mock)
+    try:
+        result = find(low_level=True)
+        assert result["status"] == "error"
+    finally:
+        _teardown()
+
+
+# --- connect happy path ---
+
+
+def test_connect_success():
+    from unittest.mock import patch
+    mock_reader = _make_mock_reader()
+    with patch.object(srv.CardReaderRegistry, "create", return_value=mock_reader):
+        result = connect(port="COM20")
+        assert result["status"] == "ok"
+        assert result["port"] == "COM20"
+        assert srv._connected is True
+        assert srv._reader is mock_reader
+    _teardown()
+
+
+def test_connect_default_params():
+    from unittest.mock import patch
+    mock_reader = _make_mock_reader()
+    with patch.object(srv.CardReaderRegistry, "create", return_value=mock_reader) as mock_create:
+        result = connect(port="COM1")
+        assert result["status"] == "ok"
+        mock_create.assert_called_once_with("pn532", transport="serial", port="COM1")
+    _teardown()
+
+
+# --- cleanup / shutdown ---
+
+
+def test_cleanup_not_connected():
+    srv._reader = None
+    srv._connected = False
+    srv._cleanup()
+    assert srv._reader is None
+    assert srv._connected is False
+
+
+def test_cleanup_connected():
+    mock = _make_mock_reader()
+    srv._reader = mock
+    srv._connected = True
+    srv._cleanup()
+    mock.disconnect.assert_called_once()
+    assert srv._reader is None
+    assert srv._connected is False
+
+
+def test_cleanup_disconnect_exception():
+    mock = _make_mock_reader()
+    mock.disconnect.side_effect = RuntimeError("hw error")
+    srv._reader = mock
+    srv._connected = True
+    srv._cleanup()
+    assert srv._reader is None
+    assert srv._connected is False
+
+
+def test_shutdown_all():
+    mock = _make_mock_reader()
+    srv._reader = mock
+    srv._connected = True
+    srv._shutdown_all()
+    mock.disconnect.assert_called_once()
+    assert srv._reader is None
+    assert srv._connected is False
+
+
+# --- script anticoll with uid_prefix ---
+
+
+def test_script_anticoll_with_uid_prefix():
+    mock = _make_mock_reader()
+    mock.anticoll.return_value = MockAnticollResponse(b"\x04\xAA\xBB\xCC\xDD", bits=32)
+    _setup(mock)
+    try:
+        result = script(steps=[{"op": "anticoll", "cl_level": 2, "uid_prefix": "04AABB"}])
+        assert len(result) == 1
+        assert result[0]["status"] == "ok"
+        assert result[0]["data"] == "04AABBCCDD"
+        mock.anticoll.assert_called_once_with(cl_level=2, nvb=0x20, uid_prefix=[0x04, 0xAA, 0xBB])
+    finally:
+        _teardown()
+
+
+def test_script_anticoll_no_uid_prefix():
+    mock = _make_mock_reader()
+    mock.anticoll.return_value = MockAnticollResponse(b"\x04\xAA\xBB\xCC\xDD", bits=32)
+    _setup(mock)
+    try:
+        result = script(steps=[{"op": "anticoll", "cl_level": 1}])
+        assert len(result) == 1
+        assert result[0]["status"] == "ok"
+        mock.anticoll.assert_called_once_with(cl_level=1, nvb=0x20, uid_prefix=[])
+    finally:
+        _teardown()

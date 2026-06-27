@@ -187,14 +187,20 @@ def _low_level_find():
     full_uid = []
     sak = 0
     for cl in [1, 2, 3]:
-        res = _reader.anticoll(cl_level=cl, nvb=0x20)
+        try:
+            res = _reader.anticoll(cl_level=cl, nvb=0x20)
+        except Exception:
+            return None
         if not res or not res.data:
             return None
 
         data = res.data
         has_next = (data[0] == 0x88)
         uid_to_select = data[0:5]
-        sak_res = _reader.select(cl_level=cl, uid=uid_to_select)
+        try:
+            sak_res = _reader.select(cl_level=cl, uid=uid_to_select)
+        except Exception:
+            return None
 
         if has_next:
             full_uid.extend(data[1:4])
@@ -464,7 +470,10 @@ def trace_get(level: str = "", layer: str = "") -> dict:
 
 
 def _script_op_transceive(step: int, args: dict) -> dict:
-    raw = bytes.fromhex(args.get("data", ""))
+    try:
+        raw = bytes.fromhex(args.get("data", ""))
+    except ValueError:
+        return {"op": "transceive", "step": step, "status": "error", "message": "Invalid hex string"}
     tx_crc = args.get("tx_crc", True)
     rx_crc = args.get("rx_crc", True)
     last_tx_bits = args.get("last_tx_bits", 0)
@@ -499,7 +508,10 @@ def _script_op_transceive(step: int, args: dict) -> dict:
 
 
 def _script_op_exchange(step: int, args: dict) -> dict:
-    raw = bytes.fromhex(args.get("data", ""))
+    try:
+        raw = bytes.fromhex(args.get("data", ""))
+    except ValueError:
+        return {"op": "exchange", "step": step, "status": "error", "message": "Invalid hex string"}
     res = _reader.exchange(raw)
     if res is None:
         return {"op": "exchange", "step": step, "status": "error", "message": "No response"}
@@ -579,7 +591,10 @@ def _script_op_halt(step: int, args: dict) -> dict:
 
 
 def _script_op_select(step: int, args: dict) -> dict:
-    uid_bytes = bytes.fromhex(args.get("uid", ""))
+    try:
+        uid_bytes = bytes.fromhex(args.get("uid", ""))
+    except ValueError:
+        return {"op": "select", "step": step, "status": "error", "message": "Invalid hex string"}
     cl_level = args.get("cl_level", 1)
     res = _reader.select(cl_level=cl_level, uid=list(uid_bytes))
     if res is None:
@@ -596,7 +611,10 @@ def _script_op_anticoll(step: int, args: dict) -> dict:
     cl_level = args.get("cl_level", 1)
     nvb = args.get("nvb", 0x20)
     uid_prefix_hex = args.get("uid_prefix", "")
-    prefix = list(bytes.fromhex(uid_prefix_hex)) if uid_prefix_hex else []
+    try:
+        prefix = list(bytes.fromhex(uid_prefix_hex)) if uid_prefix_hex else []
+    except ValueError:
+        return {"op": "anticoll", "step": step, "status": "error", "message": "Invalid hex string"}
 
     res = _reader.anticoll(cl_level=cl_level, nvb=nvb, uid_prefix=prefix)
     if res is None:
@@ -625,9 +643,6 @@ def _script_op_wait(step: int, args: dict) -> dict:
     time.sleep(ms / 1000.0)
     return {"op": "wait", "step": step, "status": "ok", "ms": ms}
 
-
-_HEX_OPS = frozenset({"transceive", "exchange", "select", "anticoll"})
-_HEX_OPS_WITH_OPTIONAL = frozenset({"anticoll"})
 
 _SCRIPT_OPS = {
     "transceive": _script_op_transceive,
@@ -688,20 +703,6 @@ def script(steps: list[dict]) -> list[dict]:
             break
 
         try:
-            if op in _HEX_OPS or (op in _HEX_OPS_WITH_OPTIONAL and step.get("uid_prefix" if op == "anticoll" else "data", "")):
-                try:
-                    if op == "transceive":
-                        bytes.fromhex(step.get("data", ""))
-                    elif op == "exchange":
-                        bytes.fromhex(step.get("data", ""))
-                    elif op == "select":
-                        bytes.fromhex(step.get("uid", ""))
-                    elif op == "anticoll" and step.get("uid_prefix", ""):
-                        bytes.fromhex(step["uid_prefix"])
-                except ValueError:
-                    results.append({"op": op, "step": i, "status": "error", "message": "Invalid hex string"})
-                    break
-
             result = handler(i, step)
             results.append(result)
             if result["status"] == "error":
