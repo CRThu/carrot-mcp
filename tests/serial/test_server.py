@@ -129,6 +129,56 @@ def test_decode_hex_empty():
     assert result == b""
 
 
+def test_decode_ascii_empty():
+    result = _decode("", "ascii")
+    assert result == b""
+
+
+def test_decode_ascii_escape_backslash_n():
+    result = _decode("Hello\\nWorld", "ascii")
+    assert result == b"Hello\nWorld"
+
+
+def test_decode_ascii_escape_backslash_t():
+    result = _decode("a\\tb", "ascii")
+    assert result == b"a\tb"
+
+
+def test_decode_ascii_escape_backslash_r():
+    result = _decode("a\\rb", "ascii")
+    assert result == b"a\rb"
+
+
+def test_decode_ascii_escape_backslash_0():
+    result = _decode("\\x00", "ascii")
+    assert result == b"\x00"
+
+
+def test_decode_ascii_escape_hex_bytes():
+    result = _decode("\\x41\\x42\\x43", "ascii")
+    assert result == b"ABC"
+
+
+def test_decode_ascii_mixed_escapes():
+    result = _decode("A\\nB\\tC\\x00D", "ascii")
+    assert result == b"A\nB\tC\x00D"
+
+
+def test_decode_ascii_invalid_escape_z():
+    result = _decode("test\\z", "ascii")
+    assert result == b"test\\z"
+
+
+def test_decode_ascii_invalid_escape_question():
+    result = _decode("a\\?b", "ascii")
+    assert result == b"a\\?b"
+
+
+def test_decode_ascii_latin1_chars():
+    result = _decode("\\xe9\\xe8\\xea", "ascii")
+    assert result == b"\xe9\xe8\xea"
+
+
 def test_format_result_hex():
     result = _format_result(b"\x41\x42", "hex")
     assert result == {"length": 2, "data": "4142"}

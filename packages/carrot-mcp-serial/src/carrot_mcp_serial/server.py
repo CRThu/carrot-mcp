@@ -1,8 +1,10 @@
 """Carrot MCP Serial Server - pyserial wrapper"""
 
 import atexit
+import codecs
 import sys
 import time
+import warnings
 from importlib.metadata import version as pkg_version
 from typing import Any, Optional
 
@@ -29,7 +31,9 @@ def _encode(data: bytes, fmt: str) -> str:
 def _decode(data: str, fmt: str) -> bytes:
     if fmt == "hex":
         return bytes.fromhex(data)
-    return data.encode("ascii").decode("unicode_escape").encode("raw_unicode_escape")
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=DeprecationWarning)
+        return codecs.decode(data, "unicode_escape").encode("raw_unicode_escape")
 
 
 def _format_result(data: bytes, fmt: str) -> dict:

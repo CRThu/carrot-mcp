@@ -34,7 +34,7 @@ uvx carrot-mcp-serial@latest
 ## Buffer Behavior (Backpressure)
 
 - **RX buffer**: when full, the poll thread stops reading from hardware. Data stays in the OS serial buffer until the consumer frees space. No data is silently dropped.
-- **TX buffer**: when full, `write()` blocks until the poll thread drains enough space. If `write_timeout` expires, a `TimeoutError` is raised.
+- **TX buffer**: when full, `write()` blocks until the poll thread drains enough space. If `write_timeout` expires (or drain cannot complete due to device issues), a `TimeoutError` is raised. Hardware write failures also raise the original exception (e.g. `SerialException`).
 - Buffer size is configurable via the `buffer_size` parameter on `open` (default 1MB).
 
 ## Return Format

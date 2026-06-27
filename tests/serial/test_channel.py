@@ -4,6 +4,8 @@ import threading
 import time
 from unittest.mock import MagicMock
 
+import serial
+
 from carrot_mcp_serial.channel import Channel, ChannelEvent
 from carrot_mcp_serial.transport import SerialTransport
 
@@ -817,3 +819,55 @@ def test_concurrent_read_lock():
         t.join(timeout=5.0)
     total = sum(len(r) for r in results)
     assert total == 10
+
+
+# --- out_waiting > 0 scenario ---
+
+
+def test_write_timeout_when_out_waiting_stuck():
+    ch, ser = _make_channel(poll_interval=0.001, write_timeout=0.1)
+    type(ser).out_waiting = property(lambda self: 5)
+    ser.write.return_value = 2
+    ch.start()
+    t0 = time.monotonic()
+    try:
+        ch.write(b"\xAA\xBB")
+        assert False, "Should have raised TimeoutError"
+    except TimeoutError:
+        pass
+    elapsed = time.monotonic() - t0
+    ch.stop()
+    assert elapsed < 0.5
+    assert ch.tx_pending == 2
+
+
+def test_drain_recovers_after_out_waiting_clears():
+    ch, ser = _make_channel(poll_interval=0.001, write_timeout=0.5)
+    call_count = 0
+
+    def fake_out_waiting():
+        nonlocal call_count
+        call_count += 1
+        return 5 if call_count <= 3 else 0
+
+    type(ser).out_waiting = property(lambda self: fake_out_waiting())
+    ser.write.return_value = 2
+    ch.start()
+    ch.write(b"\xAA\xBB")
+    time.sleep(0.2)
+    ch.stop()
+    assert ch.tx_pending == 0
+    assert ch.total_tx == 2
+
+
+def test_device_exception_write_raises():
+    ch, ser = _make_channel(poll_interval=0.001, write_timeout=0.5)
+    ser.write.side_effect = serial.SerialException("device error")
+    ch.start()
+    try:
+        ch.write(b"\xAA")
+        assert False, "Should have raised SerialException"
+    except serial.SerialException as e:
+        assert "device error" in str(e)
+    ch.stop()
+    assert ch.tx_pending == 1

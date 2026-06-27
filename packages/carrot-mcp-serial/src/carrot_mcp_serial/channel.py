@@ -161,7 +161,13 @@ class Channel:
     # --- TX drain (poll thread only) ---
 
     def _drain_tx(self) -> None:
-        """Drain one chunk from TX buffer to hardware."""
+        """Drain one chunk from TX buffer to hardware.
+
+        _drain_done is only set when data was actually dequeued and
+        written (or failed).  When the buffer is empty or the OS
+        output buffer is still busy, we return early WITHOUT setting
+        the event — callers (write / flush) keep waiting or timeout.
+        """
         with self._tx_lock:
             if not self._tx:
                 return
@@ -312,16 +318,22 @@ class Channel:
     # --- Hardware passthrough ---
 
     def write(self, data: bytes) -> int:
-        """Enqueue data into TX buffer, wait for drain, return bytes written."""
+        """Enqueue data into TX buffer, wait for drain, return bytes written.
+
+        Raises TimeoutError if drain does not complete within write_timeout.
+        Raises the original exception if hardware write fails.
+        """
         with self._write_lock:
             n = self.tx_enqueue(data)
             self._drain_done.clear()
-            self._drain_done.wait(timeout=self._write_timeout)
+            drained = self._drain_done.wait(timeout=self._write_timeout)
             with self._tx_lock:
                 if self._write_error is not None:
                     err = self._write_error
                     self._write_error = None
                     raise err
+            if not drained:
+                raise TimeoutError(f"Write timed out after {self._write_timeout}s")
             return n
 
     def flush(self) -> None:

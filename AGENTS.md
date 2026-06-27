@@ -108,7 +108,7 @@ Hardware Layer (serial.Serial)
 - `_tx_cond` (`threading.Condition`) — TX backpressure signaling between `tx_enqueue()` and `_drain_tx()`
 - All hardware I/O performed by poll thread only — callers only touch buffers (thread-safe)
 - `read_timeout` / `write_timeout` are caller-provided, passed through from server (hardware-level timeouts in `serial.Serial` are hardcoded to 1.0)
-- `write()` acquires `_write_lock`, enqueues to TX buffer, blocks via `Event.wait()` until drain completes
+- `write()` acquires `_write_lock`, enqueues to TX buffer, blocks via `Event.wait()` until drain completes; raises `TimeoutError` if drain does not finish within `write_timeout`, raises the original exception on hardware write failure
 - `flush()` acquires `_write_lock`, uses event-driven wait (clear + wait on `_drain_done`), not polling
 - `wait_read()` uses `_rx_lock` to protect `_data_ready.clear()` from signal loss
 - `_emit()` called **outside** locks to prevent observer deadlock
