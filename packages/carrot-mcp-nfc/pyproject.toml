@@ -1,11 +1,13 @@
 [project]
 name = "carrot-mcp-nfc"
 version = "0.0.3"
-description = "Carrot MCP NFC Server"
+description = "Carrot MCP NFC Server - nfcscript wrapper"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.14"
 dependencies = [
     "mcp>=1.28.0",
+    "nfcscript==0.0.7",
+    "nfctester==0.0.39",
 ]
 
 [project.scripts]

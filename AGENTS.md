@@ -140,6 +140,50 @@ Example:
 ]
 ```
 
+## NFC MCP Server Tools
+
+| Tool | Description |
+|------|-------------|
+| `version` | Get server version info |
+| `list_readers` | List available reader types and transports |
+| `connect` | Connect to NFC reader (port, reader_type, transport) |
+| `disconnect` | Disconnect from reader |
+| `find` | Find and activate an NFC card (returns uid, atq, sak) |
+| `transceive` | Raw frame exchange with bit-level control (InCommunicateThru) |
+| `exchange` | Data exchange with auto CRC (InDataExchange) |
+| `reqa` | ISO14443-A REQA (7-bit short frame) |
+| `wupa` | ISO14443-A WUPA (7-bit short frame) |
+| `halt` | ISO14443-A HALT |
+| `select` | ISO14443-A SELECT |
+| `anticoll` | ISO14443-A ANTICOLL (anti-collision) |
+| `field_on` | Turn on RF field |
+| `field_off` | Turn off RF field |
+| `script` | Execute a sequence of NFC operations (supports `expect`/`on_mismatch` matching) |
+| `trace_get` | Get trace log entries (supports level/layer filtering) |
+| `trace_clear` | Clear trace log buffer |
+
+### Architecture
+
+```
+Application Layer (MCP tools)
+    ↓ connect/find/transceive/reqa/etc
+Wrapper Layer (server.py - state management, error handling, trace capture)
+    ↓ imports nfctester registries
+Library Layer (nfctester registries)
+    ├─ CardReaderRegistry: pn532, clrc663
+    ├─ TransportRegistry: serial
+    └─ trace: loguru sink → JSON buffer
+Hardware Layer (PN532 / CLRC663 via serial)
+```
+
+- Wraps `nfctester` registry system (CardReaderRegistry, TransportRegistry)
+- Single reader session managed via module-level `_reader` / `_connected` state
+- `_cleanup()` registered via `atexit` for safe shutdown
+- `find()` supports both high-level (`reader.find()`) and low-level (manual anticollision) modes
+- `transceive()` exposes `last_tx_bits` for non-byte-aligned commands (e.g. REQA 7 bits)
+- `exchange()` uses InDataExchange with auto CRC (simpler for card-level operations)
+- Trace output captured via loguru sink, returned as JSON via `trace_get()`
+
 ## Adding a New MCP Server
 
 1. Create directory: `packages/carrot-mcp-<name>/`
