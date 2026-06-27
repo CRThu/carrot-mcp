@@ -1,6 +1,6 @@
 [project]
 name = "carrot-mcp"
-version = "0.0.3"
+version = "0.0.4"
 description = "Carrot MCP - A collection of MCP servers"
 readme = "README.md"
 requires-python = ">=3.10"
