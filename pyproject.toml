@@ -6,19 +6,22 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
 dependencies = [
-    "carrot-mcp-ds",
+    "carrot-mcp-pdf",
     "carrot-mcp-serial",
     "carrot-mcp-nfc",
+    "carrot-mcp-office",
 ]
 
 [project.optional-dependencies]
-ds = ["carrot-mcp-ds"]
+pdf = ["carrot-mcp-pdf"]
 serial = ["carrot-mcp-serial"]
 nfc = ["carrot-mcp-nfc"]
+office = ["carrot-mcp-office"]
 all = [
-    "carrot-mcp-ds",
+    "carrot-mcp-pdf",
     "carrot-mcp-serial",
     "carrot-mcp-nfc",
+    "carrot-mcp-office",
 ]
 
 [project.scripts]
@@ -30,7 +33,8 @@ members = ["packages/*"]
 [tool.uv.sources]
 carrot-mcp-serial = { workspace = true }
 carrot-mcp-nfc = { workspace = true }
-carrot-mcp-ds = { workspace = true }
+carrot-mcp-pdf = { workspace = true }
+carrot-mcp-office = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

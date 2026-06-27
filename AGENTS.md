@@ -13,9 +13,12 @@ carrot-mcp/
 │   ├── __init__.py
 │   └── cli.py                  # carrot-mcp command
 ├── packages/
-│   ├── carrot-mcp-ds/          # Datasheet MCP server
+│   ├── carrot-mcp-pdf/         # PDF MCP server
 │   │   ├── pyproject.toml
-│   │   └── src/carrot_mcp_ds/
+│   │   └── src/carrot_mcp_pdf/
+│   ├── carrot-mcp-office/      # Office MCP server
+│   │   ├── pyproject.toml
+│   │   └── src/carrot_mcp_office/
 │   ├── carrot-mcp-serial/      # Serial port MCP server
 │   │   ├── pyproject.toml
 │   │   └── src/carrot_mcp_serial/
@@ -23,7 +26,8 @@ carrot-mcp/
 │       ├── pyproject.toml
 │       └── src/carrot_mcp_nfc/
 └── tests/
-    ├── ds/
+    ├── pdf/
+    ├── office/
     ├── serial/
     │   ├── test_transport.py
     │   ├── test_channel.py
@@ -48,10 +52,12 @@ uv run pytest tests/serial/ -v
 uv run pytest tests/serial/test_channel.py -v
 
 # Run servers
-uv run carrot-mcp ds
+uv run carrot-mcp pdf
+uv run carrot-mcp office
 uv run carrot-mcp serial
 uv run carrot-mcp nfc
-uv run python -m carrot_mcp_ds
+uv run python -m carrot_mcp_pdf
+uv run python -m carrot_mcp_office
 ```
 
 ## Code Style

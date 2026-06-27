@@ -5,8 +5,9 @@ requires-python = ">=3.14"
 [manifest]
 members = [
     "carrot-mcp",
-    "carrot-mcp-ds",
     "carrot-mcp-nfc",
+    "carrot-mcp-office",
+    "carrot-mcp-pdf",
     "carrot-mcp-serial",
 ]
 
@@ -45,22 +46,27 @@ name = "carrot-mcp"
 version = "0.0.2"
 source = { editable = "." }
 dependencies = [
-    { name = "carrot-mcp-ds" },
     { name = "carrot-mcp-nfc" },
+    { name = "carrot-mcp-office" },
+    { name = "carrot-mcp-pdf" },
     { name = "carrot-mcp-serial" },
 ]
 
 [package.optional-dependencies]
 all = [
-    { name = "carrot-mcp-ds" },
     { name = "carrot-mcp-nfc" },
+    { name = "carrot-mcp-office" },
+    { name = "carrot-mcp-pdf" },
     { name = "carrot-mcp-serial" },
-]
-ds = [
-    { name = "carrot-mcp-ds" },
 ]
 nfc = [
     { name = "carrot-mcp-nfc" },
+]
+office = [
+    { name = "carrot-mcp-office" },
+]
+pdf = [
+    { name = "carrot-mcp-pdf" },
 ]
 serial = [
     { name = "carrot-mcp-serial" },
@@ -73,31 +79,23 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "carrot-mcp-ds", editable = "packages/carrot-mcp-ds" },
-    { name = "carrot-mcp-ds", marker = "extra == 'all'", editable = "packages/carrot-mcp-ds" },
-    { name = "carrot-mcp-ds", marker = "extra == 'ds'", editable = "packages/carrot-mcp-ds" },
     { name = "carrot-mcp-nfc", editable = "packages/carrot-mcp-nfc" },
     { name = "carrot-mcp-nfc", marker = "extra == 'all'", editable = "packages/carrot-mcp-nfc" },
     { name = "carrot-mcp-nfc", marker = "extra == 'nfc'", editable = "packages/carrot-mcp-nfc" },
+    { name = "carrot-mcp-office", editable = "packages/carrot-mcp-office" },
+    { name = "carrot-mcp-office", marker = "extra == 'all'", editable = "packages/carrot-mcp-office" },
+    { name = "carrot-mcp-office", marker = "extra == 'office'", editable = "packages/carrot-mcp-office" },
+    { name = "carrot-mcp-pdf", editable = "packages/carrot-mcp-pdf" },
+    { name = "carrot-mcp-pdf", marker = "extra == 'all'", editable = "packages/carrot-mcp-pdf" },
+    { name = "carrot-mcp-pdf", marker = "extra == 'pdf'", editable = "packages/carrot-mcp-pdf" },
     { name = "carrot-mcp-serial", editable = "packages/carrot-mcp-serial" },
     { name = "carrot-mcp-serial", marker = "extra == 'all'", editable = "packages/carrot-mcp-serial" },
     { name = "carrot-mcp-serial", marker = "extra == 'serial'", editable = "packages/carrot-mcp-serial" },
 ]
-provides-extras = ["ds", "serial", "nfc", "all"]
+provides-extras = ["pdf", "serial", "nfc", "office", "all"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = ">=9.1.1" }]
-
-[[package]]
-name = "carrot-mcp-ds"
-version = "0.0.3"
-source = { editable = "packages/carrot-mcp-ds" }
-dependencies = [
-    { name = "mcp" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "mcp", specifier = ">=1.28.0" }]
 
 [[package]]
 name = "carrot-mcp-nfc"
@@ -115,6 +113,28 @@ requires-dist = [
     { name = "nfcscript", specifier = "==0.0.7" },
     { name = "nfctester", specifier = "==0.0.39" },
 ]
+
+[[package]]
+name = "carrot-mcp-office"
+version = "0.0.1"
+source = { editable = "packages/carrot-mcp-office" }
+dependencies = [
+    { name = "mcp" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "mcp", specifier = ">=1.28.0" }]
+
+[[package]]
+name = "carrot-mcp-pdf"
+version = "0.0.4"
+source = { editable = "packages/carrot-mcp-pdf" }
+dependencies = [
+    { name = "mcp" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "mcp", specifier = ">=1.28.0" }]
 
 [[package]]
 name = "carrot-mcp-serial"

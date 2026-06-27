@@ -1,1 +1,0 @@
-"""Carrot MCP Datasheet"""
