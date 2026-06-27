@@ -12,7 +12,7 @@ A collection of MCP (Model Context Protocol) servers for various hardware and da
 pip install carrot-mcp
 ```
 
-This installs all MCP servers (ds, serial, nfc) by default.
+This installs all MCP servers (pdf, serial, nfc, office) by default.
 
 ### uv
 
@@ -24,17 +24,19 @@ uv pip install carrot-mcp
 
 ```bash
 # pip or uv
-pip install carrot-mcp[ds]
+pip install carrot-mcp[pdf]
 pip install carrot-mcp[serial]
 pip install carrot-mcp[nfc]
+pip install carrot-mcp[office]
 ```
 
 ### Or install sub-packages directly
 
 ```bash
-pip install carrot-mcp-ds
+pip install carrot-mcp-pdf
 pip install carrot-mcp-serial
 pip install carrot-mcp-nfc
+pip install carrot-mcp-office
 ```
 
 ## Quick Start
@@ -43,9 +45,10 @@ pip install carrot-mcp-nfc
 
 ```bash
 # Run a specific server directly (no install needed)
-uvx carrot-mcp-ds@latest
+uvx carrot-mcp-pdf@latest
 uvx carrot-mcp-serial@latest
 uvx carrot-mcp-nfc@latest
+uvx carrot-mcp-office@latest
 ```
 
 ### CLI
@@ -55,31 +58,95 @@ uvx carrot-mcp-nfc@latest
 carrot-mcp list
 
 # Run a specific server
-carrot-mcp ds
+carrot-mcp pdf
 carrot-mcp serial
 carrot-mcp nfc
+carrot-mcp office
 
 # Run with uv
-uv run carrot-mcp ds
+uv run carrot-mcp office
 ```
 
 ### Python module
 
 ```bash
-python -m carrot_mcp_ds
+python -m carrot_mcp_pdf
 python -m carrot_mcp_serial
 python -m carrot_mcp_nfc
+python -m carrot_mcp_office
 ```
 
 ## Available Servers
 
-| Server | Package | Description |
-|--------|---------|-------------|
-| DS | `carrot-mcp-ds` | Datasheet MCP server |
-| Serial | `carrot-mcp-serial` | Serial port MCP server |
-| NFC | `carrot-mcp-nfc` | NFC reader MCP server |
+| Server | Package | Category | Description |
+|--------|---------|----------|-------------|
+| PDF | `carrot-mcp-pdf` | Document | PDF processing |
+| Office | `carrot-mcp-office` | Document | Excel & Word automation with auto-backup |
+| Serial | `carrot-mcp-serial` | Hardware | Serial port communication |
+| NFC | `carrot-mcp-nfc` | Hardware | NFC reader (PN532, CLRC663) |
 
-## Serial MCP Tools
+## Document Servers
+
+### PDF MCP Tools
+
+| Tool | Description |
+|------|-------------|
+| `version` | Get server version info |
+
+### Office MCP Tools
+
+#### Excel Tools
+
+| Tool | Description |
+|------|-------------|
+| `workbook_metadata` | Get workbook metadata (sheet names, properties) |
+| `workbook_search` | Search for values in a sheet |
+| `create_sheet` | Create a new sheet (creates workbook if needed) |
+| `rename_sheet` | Rename a sheet |
+| `delete_sheet` | Delete a sheet |
+| `insert_rows` | Insert rows into a sheet |
+| `delete_rows` | Delete rows from a sheet |
+| `insert_columns` | Insert columns into a sheet |
+| `delete_columns` | Delete columns from a sheet |
+| `read_range` | Read cell values from a range |
+| `write_range` | Write a 2D array to a range (supports formulas) |
+| `copy_range` | Copy a range to another location |
+| `delete_range` | Clear cell contents in a range |
+| `read_chart` | Read chart information from a sheet |
+| `write_chart` | Create a chart (bar, line, pie, scatter) |
+| `format_range` | Format cells (font, color, alignment, merge/unmerge) |
+
+#### Word Tools
+
+| Tool | Description |
+|------|-------------|
+| `inspect` | Inspect document structure (paragraphs, tables, images) |
+| `insert_para` | Insert a paragraph |
+| `modify_para` | Modify paragraph text |
+| `format_para` | Format a paragraph (style, alignment, font) |
+| `delete_para` | Delete a paragraph |
+| `insert_table` | Insert a table with optional data |
+| `modify_table` | Modify a table cell |
+| `format_table` | Apply a table style |
+| `delete_table` | Delete a table |
+| `insert_image` | Insert an image |
+| `delete_image` | Delete an inline image |
+
+#### Backup Tools
+
+| Tool | Description |
+|------|-------------|
+| `backup_history` | List all backup versions of a file |
+| `backup_restore` | Restore a file to a specific backup version |
+
+Features:
+- **Auto-backup**: All modifications are automatically versioned
+- **Legacy format support**: `.doc` → `.docx`, `.xls` → `.xlsx` via win32com (Windows)
+- **100 version limit** with 14-day expiry per file
+
+## Hardware Servers
+
+### Serial MCP Tools
 
 | Tool | Description |
 |------|-------------|
@@ -93,6 +160,28 @@ python -m carrot_mcp_nfc
 | `script` | Execute a sequence of serial operations (write/read/wait/flush) |
 | `history` | Get operation history for a port |
 
+### NFC MCP Tools
+
+| Tool | Description |
+|------|-------------|
+| `version` | Get server version info |
+| `list_readers` | List available reader types and transports |
+| `connect` | Connect to NFC reader |
+| `disconnect` | Disconnect from reader |
+| `find` | Find and activate an NFC card |
+| `transceive` | Raw frame exchange with bit-level control |
+| `exchange` | Data exchange with auto CRC |
+| `reqa` | ISO14443-A REQA |
+| `wupa` | ISO14443-A WUPA |
+| `halt` | ISO14443-A HALT |
+| `select` | ISO14443-A SELECT |
+| `anticoll` | ISO14443-A anti-collision |
+| `field_on` | Turn on RF field |
+| `field_off` | Turn off RF field |
+| `script` | Execute a sequence of NFC operations |
+| `trace_get` | Get trace log entries |
+| `trace_clear` | Clear trace log buffer |
+
 ## MCP Configuration
 
 Add to your MCP client config (e.g., Claude Desktop):
@@ -100,9 +189,13 @@ Add to your MCP client config (e.g., Claude Desktop):
 ```json
 {
   "mcpServers": {
-    "carrot-ds": {
+    "carrot-pdf": {
       "command": "uvx",
-      "args": ["carrot-mcp-ds@latest"]
+      "args": ["carrot-mcp-pdf@latest"]
+    },
+    "carrot-office": {
+      "command": "uvx",
+      "args": ["carrot-mcp-office@latest"]
     },
     "carrot-serial": {
       "command": "uvx",
@@ -127,9 +220,13 @@ uv sync --all-packages
 # Run tests
 uv run pytest
 
+# Run tests for specific server
+uv run pytest tests/office/ -v
+uv run pytest tests/serial/ -v
+
 # Bump version and release
 bump.bat                        # interactive
-bump.bat carrot-mcp-ds          # direct package
+bump.bat carrot-mcp-office      # direct package
 ```
 
 ## License
