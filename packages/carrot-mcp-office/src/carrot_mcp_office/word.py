@@ -3,22 +3,14 @@
 from __future__ import annotations
 
 import os
-import shutil
 
 from docx import Document
 from docx.shared import Inches, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 from carrot_mcp_office._mcp import mcp
-
-
-def _backup_file(path: str) -> str | None:
-    """Create a .bak copy of the file. Returns backup path or None if no original."""
-    if not os.path.exists(path):
-        return None
-    bak_path = path + ".bak"
-    shutil.copy2(path, bak_path)
-    return bak_path
+from carrot_mcp_office.backup import save_version
+from carrot_mcp_office.convert import ensure_docx_format
 
 
 def _open_or_create_document(path: str) -> Document:
@@ -28,6 +20,22 @@ def _open_or_create_document(path: str) -> Document:
     doc = Document()
     doc.save(path)
     return Document(path)
+
+
+def _handle_docx(path: str) -> tuple[str, dict | None]:
+    """Ensure docx format, return (resolved_path, error_or_none)."""
+    resolved, err = ensure_docx_format(path)
+    if err:
+        return path, {"status": "error", "message": err}
+    return resolved, None
+
+
+def _save_and_return(path: str, tool: str, result: dict) -> dict:
+    """Add version to result and save backup."""
+    ver = save_version(path, tool)
+    if ver is not None:
+        result["version"] = ver
+    return result
 
 
 @mcp.tool()
@@ -62,18 +70,18 @@ def inspect(path: str) -> dict:
 
 
 @mcp.tool()
-def insert_para(path: str, text: str, index: int | None = None, backup: bool = False) -> dict:
+def insert_para(path: str, text: str, index: int | None = None) -> dict:
     """Insert a paragraph at the specified position.
 
     Args:
         path: Absolute path to the .docx file.
         text: Paragraph text content.
         index: Position (0-based) to insert at. None appends at end.
-        backup: If True, creates a .bak copy before modifying.
     """
     try:
-        if backup:
-            _backup_file(path)
+        path, err = _handle_docx(path)
+        if err:
+            return err
         doc = _open_or_create_document(path)
         if index is None or index >= len(doc.paragraphs):
             doc.add_paragraph(text)
@@ -82,24 +90,24 @@ def insert_para(path: str, text: str, index: int | None = None, backup: bool = F
             new_para = doc.add_paragraph(text)
             ref_para._element.addprevious(new_para._element)
         doc.save(path)
-        return {"status": "ok", "text": text, "index": index if index is not None else len(doc.paragraphs) - 1}
+        return _save_and_return(path, "insert_para", {"status": "ok", "text": text, "index": index if index is not None else len(doc.paragraphs) - 1})
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
 
 @mcp.tool()
-def modify_para(path: str, index: int, text: str, backup: bool = False) -> dict:
+def modify_para(path: str, index: int, text: str) -> dict:
     """Modify an existing paragraph's text.
 
     Args:
         path: Absolute path to the .docx file.
         index: Paragraph index (0-based).
         text: New text content.
-        backup: If True, creates a .bak copy before modifying.
     """
     try:
-        if backup:
-            _backup_file(path)
+        path, err = _handle_docx(path)
+        if err:
+            return err
         doc = Document(path)
         if index < 0 or index >= len(doc.paragraphs):
             return {"status": "error", "message": f"Paragraph index {index} out of range (0-{len(doc.paragraphs)-1})"}
@@ -112,7 +120,7 @@ def modify_para(path: str, index: int, text: str, backup: bool = False) -> dict:
         else:
             para.text = text
         doc.save(path)
-        return {"status": "ok", "index": index, "old_text": old_text, "new_text": text}
+        return _save_and_return(path, "modify_para", {"status": "ok", "index": index, "old_text": old_text, "new_text": text})
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -127,7 +135,6 @@ def format_para(
     italic: bool | None = None,
     font_size: int | None = None,
     font_color: str | None = None,
-    backup: bool = False,
 ) -> dict:
     """Format a paragraph.
 
@@ -140,11 +147,11 @@ def format_para(
         italic: Italic text.
         font_size: Font size in points.
         font_color: Font color as hex string (e.g. "FF0000").
-        backup: If True, creates a .bak copy before formatting.
     """
     try:
-        if backup:
-            _backup_file(path)
+        path, err = _handle_docx(path)
+        if err:
+            return err
         doc = Document(path)
         if index < 0 or index >= len(doc.paragraphs):
             return {"status": "error", "message": f"Paragraph index {index} out of range (0-{len(doc.paragraphs)-1})"}
@@ -174,23 +181,23 @@ def format_para(
             if font_color:
                 run.font.color.rgb = RGBColor.from_string(font_color)
         doc.save(path)
-        return {"status": "ok", "index": index}
+        return _save_and_return(path, "format_para", {"status": "ok", "index": index})
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
 
 @mcp.tool()
-def delete_para(path: str, index: int, backup: bool = False) -> dict:
+def delete_para(path: str, index: int) -> dict:
     """Delete a paragraph.
 
     Args:
         path: Absolute path to the .docx file.
         index: Paragraph index (0-based).
-        backup: If True, creates a .bak copy before deleting.
     """
     try:
-        if backup:
-            _backup_file(path)
+        path, err = _handle_docx(path)
+        if err:
+            return err
         doc = Document(path)
         if index < 0 or index >= len(doc.paragraphs):
             return {"status": "error", "message": f"Paragraph index {index} out of range (0-{len(doc.paragraphs)-1})"}
@@ -198,13 +205,13 @@ def delete_para(path: str, index: int, backup: bool = False) -> dict:
         parent = para._element.getparent()
         parent.remove(para._element)
         doc.save(path)
-        return {"status": "ok", "index": index}
+        return _save_and_return(path, "delete_para", {"status": "ok", "index": index})
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
 
 @mcp.tool()
-def insert_table(path: str, rows: int, cols: int, data: list[list] | None = None, index: int | None = None, backup: bool = False) -> dict:
+def insert_table(path: str, rows: int, cols: int, data: list[list] | None = None, index: int | None = None) -> dict:
     """Insert a table.
 
     Args:
@@ -213,11 +220,11 @@ def insert_table(path: str, rows: int, cols: int, data: list[list] | None = None
         cols: Number of columns.
         data: Optional 2D array of cell values.
         index: Position (0-based) to insert at. None appends at end.
-        backup: If True, creates a .bak copy before modifying.
     """
     try:
-        if backup:
-            _backup_file(path)
+        path, err = _handle_docx(path)
+        if err:
+            return err
         doc = _open_or_create_document(path)
         if data and (len(data) != rows or any(len(row) != cols for row in data)):
             return {"status": "error", "message": "Data dimensions don't match rows/cols"}
@@ -230,13 +237,13 @@ def insert_table(path: str, rows: int, cols: int, data: list[list] | None = None
             ref_table = doc.tables[index]
             ref_table._element.addprevious(table._element)
         doc.save(path)
-        return {"status": "ok", "rows": rows, "cols": cols, "index": index if index is not None else len(doc.tables) - 1}
+        return _save_and_return(path, "insert_table", {"status": "ok", "rows": rows, "cols": cols, "index": index if index is not None else len(doc.tables) - 1})
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
 
 @mcp.tool()
-def modify_table(path: str, table_index: int, row: int, col: int, text: str, backup: bool = False) -> dict:
+def modify_table(path: str, table_index: int, row: int, col: int, text: str) -> dict:
     """Modify a table cell.
 
     Args:
@@ -245,11 +252,11 @@ def modify_table(path: str, table_index: int, row: int, col: int, text: str, bac
         row: Row index (0-based).
         col: Column index (0-based).
         text: New cell text.
-        backup: If True, creates a .bak copy before modifying.
     """
     try:
-        if backup:
-            _backup_file(path)
+        path, err = _handle_docx(path)
+        if err:
+            return err
         doc = Document(path)
         if table_index < 0 or table_index >= len(doc.tables):
             return {"status": "error", "message": f"Table index {table_index} out of range (0-{len(doc.tables)-1})"}
@@ -261,24 +268,24 @@ def modify_table(path: str, table_index: int, row: int, col: int, text: str, bac
         old_text = table.rows[row].cells[col].text
         table.rows[row].cells[col].text = text
         doc.save(path)
-        return {"status": "ok", "table_index": table_index, "row": row, "col": col, "old_text": old_text, "new_text": text}
+        return _save_and_return(path, "modify_table", {"status": "ok", "table_index": table_index, "row": row, "col": col, "old_text": old_text, "new_text": text})
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
 
 @mcp.tool()
-def format_table(path: str, table_index: int, style: str | None = None, backup: bool = False) -> dict:
+def format_table(path: str, table_index: int, style: str | None = None) -> dict:
     """Format a table.
 
     Args:
         path: Absolute path to the .docx file.
         table_index: Table index (0-based).
         style: Table style name (e.g. "Table Grid", "Light Shading").
-        backup: If True, creates a .bak copy before formatting.
     """
     try:
-        if backup:
-            _backup_file(path)
+        path, err = _handle_docx(path)
+        if err:
+            return err
         doc = Document(path)
         if table_index < 0 or table_index >= len(doc.tables):
             return {"status": "error", "message": f"Table index {table_index} out of range (0-{len(doc.tables)-1})"}
@@ -289,23 +296,23 @@ def format_table(path: str, table_index: int, style: str | None = None, backup: 
             except KeyError:
                 return {"status": "error", "message": f"Style '{style}' not found"}
         doc.save(path)
-        return {"status": "ok", "table_index": table_index, "style": style}
+        return _save_and_return(path, "format_table", {"status": "ok", "table_index": table_index, "style": style})
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
 
 @mcp.tool()
-def delete_table(path: str, table_index: int, backup: bool = False) -> dict:
+def delete_table(path: str, table_index: int) -> dict:
     """Delete a table.
 
     Args:
         path: Absolute path to the .docx file.
         table_index: Table index (0-based).
-        backup: If True, creates a .bak copy before deleting.
     """
     try:
-        if backup:
-            _backup_file(path)
+        path, err = _handle_docx(path)
+        if err:
+            return err
         doc = Document(path)
         if table_index < 0 or table_index >= len(doc.tables):
             return {"status": "error", "message": f"Table index {table_index} out of range (0-{len(doc.tables)-1})"}
@@ -313,13 +320,13 @@ def delete_table(path: str, table_index: int, backup: bool = False) -> dict:
         parent = table._element.getparent()
         parent.remove(table._element)
         doc.save(path)
-        return {"status": "ok", "table_index": table_index}
+        return _save_and_return(path, "delete_table", {"status": "ok", "table_index": table_index})
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
 
 @mcp.tool()
-def insert_image(path: str, image_path: str, index: int | None = None, width: float | None = None, backup: bool = False) -> dict:
+def insert_image(path: str, image_path: str, index: int | None = None, width: float | None = None) -> dict:
     """Insert an image into the document.
 
     Args:
@@ -327,11 +334,11 @@ def insert_image(path: str, image_path: str, index: int | None = None, width: fl
         image_path: Absolute path to the image file.
         index: Paragraph position (0-based) to insert at. None appends at end.
         width: Image width in inches. None uses original size.
-        backup: If True, creates a .bak copy before modifying.
     """
     try:
-        if backup:
-            _backup_file(path)
+        path, err = _handle_docx(path)
+        if err:
+            return err
         doc = _open_or_create_document(path)
         if index is None or index >= len(doc.paragraphs):
             para = doc.add_paragraph()
@@ -345,23 +352,23 @@ def insert_image(path: str, image_path: str, index: int | None = None, width: fl
         else:
             run.add_picture(image_path)
         doc.save(path)
-        return {"status": "ok", "image_path": image_path, "index": index}
+        return _save_and_return(path, "insert_image", {"status": "ok", "image_path": image_path, "index": index})
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
 
 @mcp.tool()
-def delete_image(path: str, image_index: int, backup: bool = False) -> dict:
+def delete_image(path: str, image_index: int) -> dict:
     """Delete an inline image by its occurrence index.
 
     Args:
         path: Absolute path to the .docx file.
         image_index: Image occurrence index (0-based, counting across all paragraphs).
-        backup: If True, creates a .bak copy before deleting.
     """
     try:
-        if backup:
-            _backup_file(path)
+        path, err = _handle_docx(path)
+        if err:
+            return err
         doc = Document(path)
         current_index = 0
         for para in doc.paragraphs:
@@ -372,7 +379,7 @@ def delete_image(path: str, image_index: int, backup: bool = False) -> dict:
                         parent = drawing.getparent()
                         parent.remove(drawing)
                         doc.save(path)
-                        return {"status": "ok", "image_index": image_index}
+                        return _save_and_return(path, "delete_image", {"status": "ok", "image_index": image_index})
                     current_index += 1
         return {"status": "error", "message": f"Image index {image_index} out of range (found {current_index} images)"}
     except Exception as e:

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import shutil
 
 import openpyxl
 from openpyxl.utils import cell as xl_cell
@@ -11,6 +10,8 @@ from openpyxl.chart import BarChart, LineChart, PieChart, ScatterChart, Referenc
 from openpyxl.styles import Font, Alignment
 
 from carrot_mcp_office._mcp import mcp
+from carrot_mcp_office.backup import save_version
+from carrot_mcp_office.convert import ensure_xlsx_format
 
 
 def _parse_cell_ref(ref: str) -> tuple[int, int]:
@@ -24,15 +25,6 @@ def _parse_range(start: str, end: str) -> tuple[int, int, int, int]:
     return min_row, min_col, max_row, max_col
 
 
-def _backup_file(path: str) -> str | None:
-    """Create a .bak copy of the file. Returns backup path or None if no original."""
-    if not os.path.exists(path):
-        return None
-    bak_path = path + ".bak"
-    shutil.copy2(path, bak_path)
-    return bak_path
-
-
 def _has_data_in_range(ws, min_row: int, min_col: int, max_row: int, max_col: int) -> bool:
     """Check if any cell in the range has non-None value."""
     for row in ws.iter_rows(min_row=min_row, min_col=min_col, max_row=max_row, max_col=max_col):
@@ -40,6 +32,22 @@ def _has_data_in_range(ws, min_row: int, min_col: int, max_row: int, max_col: in
             if cell.value is not None:
                 return True
     return False
+
+
+def _handle_xlsx(path: str) -> tuple[str, dict | None]:
+    """Ensure xlsx format, return (resolved_path, error_or_none)."""
+    resolved, err = ensure_xlsx_format(path)
+    if err:
+        return path, {"status": "error", "message": err}
+    return resolved, None
+
+
+def _save_and_return(path: str, tool: str, result: dict) -> dict:
+    """Add version to result and save backup."""
+    ver = save_version(path, tool)
+    if ver is not None:
+        result["version"] = ver
+    return result
 
 
 @mcp.tool()
@@ -97,18 +105,18 @@ def workbook_search(path: str, sheet: str, query: str) -> dict:
 
 
 @mcp.tool()
-def create_sheet(path: str, name: str, index: int | None = None, backup: bool = False) -> dict:
+def create_sheet(path: str, name: str, index: int | None = None) -> dict:
     """Create a new sheet in the workbook. Creates the workbook if it doesn't exist.
 
     Args:
         path: Absolute path to the .xlsx file.
         name: Name for the new sheet.
         index: Position (0-based). None appends at end.
-        backup: If True, creates a .bak copy before modifying.
     """
     try:
-        if backup:
-            _backup_file(path)
+        path, err = _handle_xlsx(path)
+        if err:
+            return err
         if os.path.exists(path):
             wb = openpyxl.load_workbook(path)
         else:
@@ -118,7 +126,7 @@ def create_sheet(path: str, name: str, index: int | None = None, backup: bool = 
                 return {"status": "error", "message": f"Sheet '{name}' already exists"}
             ws = wb.create_sheet(title=name, index=index)
             wb.save(path)
-            return {"status": "ok", "sheet": name, "index": index}
+            return _save_and_return(path, "create_sheet", {"status": "ok", "sheet": name, "index": index})
         finally:
             wb.close()
     except Exception as e:
@@ -126,18 +134,18 @@ def create_sheet(path: str, name: str, index: int | None = None, backup: bool = 
 
 
 @mcp.tool()
-def rename_sheet(path: str, old_name: str, new_name: str, backup: bool = False) -> dict:
+def rename_sheet(path: str, old_name: str, new_name: str) -> dict:
     """Rename a sheet.
 
     Args:
         path: Absolute path to the .xlsx file.
         old_name: Current sheet name.
         new_name: New sheet name.
-        backup: If True, creates a .bak copy before modifying.
     """
     try:
-        if backup:
-            _backup_file(path)
+        path, err = _handle_xlsx(path)
+        if err:
+            return err
         wb = openpyxl.load_workbook(path)
         try:
             if old_name not in wb.sheetnames:
@@ -147,7 +155,7 @@ def rename_sheet(path: str, old_name: str, new_name: str, backup: bool = False) 
             ws = wb[old_name]
             ws.title = new_name
             wb.save(path)
-            return {"status": "ok", "old_name": old_name, "new_name": new_name}
+            return _save_and_return(path, "rename_sheet", {"status": "ok", "old_name": old_name, "new_name": new_name})
         finally:
             wb.close()
     except Exception as e:
@@ -155,17 +163,17 @@ def rename_sheet(path: str, old_name: str, new_name: str, backup: bool = False) 
 
 
 @mcp.tool()
-def delete_sheet(path: str, name: str, backup: bool = False) -> dict:
+def delete_sheet(path: str, name: str) -> dict:
     """Delete a sheet from the workbook.
 
     Args:
         path: Absolute path to the .xlsx file.
         name: Sheet name to delete.
-        backup: If True, creates a .bak copy before deleting.
     """
     try:
-        if backup:
-            _backup_file(path)
+        path, err = _handle_xlsx(path)
+        if err:
+            return err
         wb = openpyxl.load_workbook(path)
         try:
             if name not in wb.sheetnames:
@@ -174,7 +182,7 @@ def delete_sheet(path: str, name: str, backup: bool = False) -> dict:
                 return {"status": "error", "message": "Cannot delete the last sheet"}
             wb.remove(wb[name])
             wb.save(path)
-            return {"status": "ok", "sheet": name}
+            return _save_and_return(path, "delete_sheet", {"status": "ok", "sheet": name})
         finally:
             wb.close()
     except Exception as e:
@@ -182,7 +190,7 @@ def delete_sheet(path: str, name: str, backup: bool = False) -> dict:
 
 
 @mcp.tool()
-def insert_rows(path: str, sheet: str, start: int, count: int = 1, backup: bool = False) -> dict:
+def insert_rows(path: str, sheet: str, start: int, count: int = 1) -> dict:
     """Insert rows into a sheet.
 
     Args:
@@ -190,11 +198,11 @@ def insert_rows(path: str, sheet: str, start: int, count: int = 1, backup: bool 
         sheet: Sheet name.
         start: Row number to start inserting at (1-based).
         count: Number of rows to insert.
-        backup: If True, creates a .bak copy before modifying.
     """
     try:
-        if backup:
-            _backup_file(path)
+        path, err = _handle_xlsx(path)
+        if err:
+            return err
         wb = openpyxl.load_workbook(path)
         try:
             if sheet not in wb.sheetnames:
@@ -202,7 +210,7 @@ def insert_rows(path: str, sheet: str, start: int, count: int = 1, backup: bool 
             ws = wb[sheet]
             ws.insert_rows(start, count)
             wb.save(path)
-            return {"status": "ok", "sheet": sheet, "start": start, "count": count}
+            return _save_and_return(path, "insert_rows", {"status": "ok", "sheet": sheet, "start": start, "count": count})
         finally:
             wb.close()
     except Exception as e:
@@ -210,7 +218,7 @@ def insert_rows(path: str, sheet: str, start: int, count: int = 1, backup: bool 
 
 
 @mcp.tool()
-def delete_rows(path: str, sheet: str, start: int, count: int = 1, backup: bool = False) -> dict:
+def delete_rows(path: str, sheet: str, start: int, count: int = 1) -> dict:
     """Delete rows from a sheet.
 
     Args:
@@ -218,11 +226,11 @@ def delete_rows(path: str, sheet: str, start: int, count: int = 1, backup: bool 
         sheet: Sheet name.
         start: Row number to start deleting at (1-based).
         count: Number of rows to delete.
-        backup: If True, creates a .bak copy before deleting.
     """
     try:
-        if backup:
-            _backup_file(path)
+        path, err = _handle_xlsx(path)
+        if err:
+            return err
         wb = openpyxl.load_workbook(path)
         try:
             if sheet not in wb.sheetnames:
@@ -230,7 +238,7 @@ def delete_rows(path: str, sheet: str, start: int, count: int = 1, backup: bool 
             ws = wb[sheet]
             ws.delete_rows(start, count)
             wb.save(path)
-            return {"status": "ok", "sheet": sheet, "start": start, "count": count}
+            return _save_and_return(path, "delete_rows", {"status": "ok", "sheet": sheet, "start": start, "count": count})
         finally:
             wb.close()
     except Exception as e:
@@ -238,7 +246,7 @@ def delete_rows(path: str, sheet: str, start: int, count: int = 1, backup: bool 
 
 
 @mcp.tool()
-def insert_columns(path: str, sheet: str, start: int, count: int = 1, backup: bool = False) -> dict:
+def insert_columns(path: str, sheet: str, start: int, count: int = 1) -> dict:
     """Insert columns into a sheet.
 
     Args:
@@ -246,11 +254,11 @@ def insert_columns(path: str, sheet: str, start: int, count: int = 1, backup: bo
         sheet: Sheet name.
         start: Column number to start inserting at (1-based).
         count: Number of columns to insert.
-        backup: If True, creates a .bak copy before modifying.
     """
     try:
-        if backup:
-            _backup_file(path)
+        path, err = _handle_xlsx(path)
+        if err:
+            return err
         wb = openpyxl.load_workbook(path)
         try:
             if sheet not in wb.sheetnames:
@@ -258,7 +266,7 @@ def insert_columns(path: str, sheet: str, start: int, count: int = 1, backup: bo
             ws = wb[sheet]
             ws.insert_cols(start, count)
             wb.save(path)
-            return {"status": "ok", "sheet": sheet, "start": start, "count": count}
+            return _save_and_return(path, "insert_columns", {"status": "ok", "sheet": sheet, "start": start, "count": count})
         finally:
             wb.close()
     except Exception as e:
@@ -266,7 +274,7 @@ def insert_columns(path: str, sheet: str, start: int, count: int = 1, backup: bo
 
 
 @mcp.tool()
-def delete_columns(path: str, sheet: str, start: int, count: int = 1, backup: bool = False) -> dict:
+def delete_columns(path: str, sheet: str, start: int, count: int = 1) -> dict:
     """Delete columns from a sheet.
 
     Args:
@@ -274,11 +282,11 @@ def delete_columns(path: str, sheet: str, start: int, count: int = 1, backup: bo
         sheet: Sheet name.
         start: Column number to start deleting at (1-based).
         count: Number of columns to delete.
-        backup: If True, creates a .bak copy before deleting.
     """
     try:
-        if backup:
-            _backup_file(path)
+        path, err = _handle_xlsx(path)
+        if err:
+            return err
         wb = openpyxl.load_workbook(path)
         try:
             if sheet not in wb.sheetnames:
@@ -286,7 +294,7 @@ def delete_columns(path: str, sheet: str, start: int, count: int = 1, backup: bo
             ws = wb[sheet]
             ws.delete_cols(start, count)
             wb.save(path)
-            return {"status": "ok", "sheet": sheet, "start": start, "count": count}
+            return _save_and_return(path, "delete_columns", {"status": "ok", "sheet": sheet, "start": start, "count": count})
         finally:
             wb.close()
     except Exception as e:
@@ -330,7 +338,6 @@ def write_range(
     start: str,
     data: list[list],
     overwrite: bool = False,
-    backup: bool = False,
 ) -> dict:
     """Write a 2D array of values to a range.
 
@@ -340,9 +347,11 @@ def write_range(
         start: Start cell reference (e.g. "A1").
         data: 2D array of values to write. Formulas should be strings starting with "=".
         overwrite: If False, returns error when target cells contain data. Set True to allow overwrite.
-        backup: If True, creates a .bak copy of the file before writing.
     """
     try:
+        path, err = _handle_xlsx(path)
+        if err:
+            return err
         wb = openpyxl.load_workbook(path)
         try:
             if sheet not in wb.sheetnames:
@@ -356,13 +365,11 @@ def write_range(
                     "status": "error",
                     "message": f"Target range starting at {start} contains data. Use overwrite=true to replace.",
                 }
-            if backup:
-                _backup_file(path)
             for r_idx, row in enumerate(data):
                 for c_idx, value in enumerate(row):
                     ws.cell(row=min_row + r_idx, column=min_col + c_idx, value=value)
             wb.save(path)
-            return {"status": "ok", "sheet": sheet, "start": start, "rows": len(data), "cols": len(data[0]) if data else 0}
+            return _save_and_return(path, "write_range", {"status": "ok", "sheet": sheet, "start": start, "rows": len(data), "cols": len(data[0]) if data else 0})
         finally:
             wb.close()
     except Exception as e:
@@ -377,7 +384,6 @@ def copy_range(
     source_end: str,
     target_start: str,
     overwrite: bool = False,
-    backup: bool = False,
 ) -> dict:
     """Copy a range of cells to another location.
 
@@ -388,9 +394,11 @@ def copy_range(
         source_end: Source range end cell (e.g. "B2").
         target_start: Target start cell (e.g. "D1").
         overwrite: If False, returns error when target cells contain data. Set True to allow overwrite.
-        backup: If True, creates a .bak copy before modifying.
     """
     try:
+        path, err = _handle_xlsx(path)
+        if err:
+            return err
         wb = openpyxl.load_workbook(path)
         try:
             if sheet not in wb.sheetnames:
@@ -405,8 +413,6 @@ def copy_range(
                     "status": "error",
                     "message": f"Target range starting at {target_start} contains data. Use overwrite=true to replace.",
                 }
-            if backup:
-                _backup_file(path)
             for r in range(src_min_row, src_max_row + 1):
                 for c in range(src_min_col, src_max_col + 1):
                     src_cell = ws.cell(row=r, column=c)
@@ -419,7 +425,7 @@ def copy_range(
                         tgt_cell.fill = src_cell.fill.copy()
                         tgt_cell.number_format = src_cell.number_format
             wb.save(path)
-            return {"status": "ok", "sheet": sheet, "source": f"{source_start}:{source_end}", "target": target_start}
+            return _save_and_return(path, "copy_range", {"status": "ok", "sheet": sheet, "source": f"{source_start}:{source_end}", "target": target_start})
         finally:
             wb.close()
     except Exception as e:
@@ -427,7 +433,7 @@ def copy_range(
 
 
 @mcp.tool()
-def delete_range(path: str, sheet: str, start: str, end: str, backup: bool = False) -> dict:
+def delete_range(path: str, sheet: str, start: str, end: str) -> dict:
     """Clear cell contents in a range (keeps formatting).
 
     Args:
@@ -435,11 +441,11 @@ def delete_range(path: str, sheet: str, start: str, end: str, backup: bool = Fal
         sheet: Sheet name.
         start: Start cell reference (e.g. "A1").
         end: End cell reference (e.g. "B2").
-        backup: If True, creates a .bak copy before clearing.
     """
     try:
-        if backup:
-            _backup_file(path)
+        path, err = _handle_xlsx(path)
+        if err:
+            return err
         wb = openpyxl.load_workbook(path)
         try:
             if sheet not in wb.sheetnames:
@@ -450,7 +456,7 @@ def delete_range(path: str, sheet: str, start: str, end: str, backup: bool = Fal
                 for cell in row:
                     cell.value = None
             wb.save(path)
-            return {"status": "ok", "sheet": sheet, "range": f"{start}:{end}"}
+            return _save_and_return(path, "delete_range", {"status": "ok", "sheet": sheet, "range": f"{start}:{end}"})
         finally:
             wb.close()
     except Exception as e:
@@ -493,7 +499,6 @@ def write_chart(
     data_range: str,
     target_cell: str,
     title: str = "",
-    backup: bool = False,
 ) -> dict:
     """Create a chart in the sheet.
 
@@ -504,11 +509,11 @@ def write_chart(
         data_range: Data range reference (e.g. "A1:B5").
         target_cell: Cell where chart will be placed (e.g. "D1").
         title: Chart title.
-        backup: If True, creates a .bak copy before modifying.
     """
     try:
-        if backup:
-            _backup_file(path)
+        path, err = _handle_xlsx(path)
+        if err:
+            return err
         wb = openpyxl.load_workbook(path)
         try:
             if sheet not in wb.sheetnames:
@@ -530,7 +535,7 @@ def write_chart(
             tgt_row, tgt_col = _parse_cell_ref(target_cell)
             ws.add_chart(chart, f"{xl_cell.get_column_letter(tgt_col)}{tgt_row}")
             wb.save(path)
-            return {"status": "ok", "sheet": sheet, "chart_type": chart_type, "target": target_cell}
+            return _save_and_return(path, "write_chart", {"status": "ok", "sheet": sheet, "chart_type": chart_type, "target": target_cell})
         finally:
             wb.close()
     except Exception as e:
@@ -553,7 +558,6 @@ def format_range(
     number_format: str | None = None,
     merge: bool = False,
     unmerge: bool = False,
-    backup: bool = False,
 ) -> dict:
     """Format a range of cells.
 
@@ -572,11 +576,11 @@ def format_range(
         number_format: Number format string (e.g. "0.00", "yyyy-mm-dd").
         merge: Merge cells in range.
         unmerge: Unmerge cells in range.
-        backup: If True, creates a .bak copy before formatting.
     """
     try:
-        if backup:
-            _backup_file(path)
+        path, err = _handle_xlsx(path)
+        if err:
+            return err
         wb = openpyxl.load_workbook(path)
         try:
             if sheet not in wb.sheetnames:
@@ -607,7 +611,7 @@ def format_range(
             elif unmerge:
                 ws.unmerge_cells(f"{start}:{end}")
             wb.save(path)
-            return {"status": "ok", "sheet": sheet, "range": f"{start}:{end}"}
+            return _save_and_return(path, "format_range", {"status": "ok", "sheet": sheet, "range": f"{start}:{end}"})
         finally:
             wb.close()
     except Exception as e:

@@ -196,7 +196,7 @@ Hardware Layer (PN532 / CLRC663 via serial)
 
 | Tool | Description |
 |------|-------------|
-| `version` | Get server version info |
+| `version` | Get server version info and backup configuration |
 | `workbook_metadata` | Get workbook metadata (sheet names, properties) |
 | `workbook_search` | Search for values in a sheet |
 | `create_sheet` | Create a new sheet (creates workbook if needed) |
@@ -224,13 +224,17 @@ Hardware Layer (PN532 / CLRC663 via serial)
 | `delete_table` | Delete a table |
 | `insert_image` | Insert an image |
 | `delete_image` | Delete an inline image |
+| `backup_history` | List all backup versions of a file |
+| `backup_restore` | Restore a file to a specific backup version |
 
 ### Architecture
 
 ```
 Application Layer (MCP tools)
     ↓ workbook/doc operations via openpyxl / python-docx
-Library Layer (openpyxl, python-docx)
+    ↓ auto-backup via backup.py
+    ↓ legacy format conversion via convert.py
+Library Layer (openpyxl, python-docx, win32com)
     ↓ stateless per-call: open → operate → save → close
 File Layer (.xlsx, .docx)
 ```
@@ -238,9 +242,23 @@ File Layer (.xlsx, .docx)
 - Stateless per-call pattern: each tool opens file, performs operation, saves, closes
 - `create_sheet` creates workbook if file doesn't exist; other Excel tools require existing file
 - `insert_para` / `insert_table` / `insert_image` create document if file doesn't exist
-- Split modules: `excel.py` (16 tools), `word.py` (11 tools), shared `_mcp.py` FastMCP instance
+- Split modules: `excel.py` (16 tools), `word.py` (11 tools), `backup.py` (versioning), `convert.py` (legacy format), shared `_mcp.py` FastMCP instance
 - Word insert-by-index uses XML manipulation (`_element.addprevious()`)
 - Word `delete_image` only handles inline shapes (python-docx limitation)
+
+**Backup system:**
+- Auto-versioning: every modification creates a new version in `%APPDATA%/carrot-mcp/office/`
+- Mirrored directory structure with `_versions.json` metadata
+- 100 version limit with pruning (oldest 50 removed when exceeded)
+- 14-day expiry for old versions
+- `backup_history(path)` lists all versions, `backup_restore(path, version)` restores
+- Each mutation returns `version` number in result for LLM context
+- Configurable via environment variables: `CARROT_MCP_BACKUP_MAX_VERSIONS`, `CARROT_MCP_BACKUP_MAX_AGE_DAYS`, `CARROT_MCP_BACKUP_ROOT`
+
+**Legacy format conversion:**
+- Implicit auto-conversion: `.doc` → `.docx`, `.xls` → `.xlsx` via win32com
+- Original file preserved, new format created alongside
+- Requires `pywin32` on Windows; returns error on other platforms
 
 ## Adding a New MCP Server
 
