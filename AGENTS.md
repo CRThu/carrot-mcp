@@ -192,6 +192,56 @@ Hardware Layer (PN532 / CLRC663 via serial)
 - `script` hex validation is done inside each handler (consistent "Invalid hex string" errors); no pre-validation layer
 - Trace output captured via loguru sink, returned as JSON via `trace_get()`
 
+## Office MCP Server Tools
+
+| Tool | Description |
+|------|-------------|
+| `version` | Get server version info |
+| `workbook_metadata` | Get workbook metadata (sheet names, properties) |
+| `workbook_search` | Search for values in a sheet |
+| `create_sheet` | Create a new sheet (creates workbook if needed) |
+| `rename_sheet` | Rename a sheet |
+| `delete_sheet` | Delete a sheet |
+| `insert_rows` | Insert rows into a sheet |
+| `delete_rows` | Delete rows from a sheet |
+| `insert_columns` | Insert columns into a sheet |
+| `delete_columns` | Delete columns from a sheet |
+| `read_range` | Read cell values from a range |
+| `write_range` | Write a 2D array to a range (supports formulas) |
+| `copy_range` | Copy a range to another location |
+| `delete_range` | Clear cell contents in a range |
+| `read_chart` | Read chart information from a sheet |
+| `write_chart` | Create a chart (bar, line, pie, scatter) |
+| `format_range` | Format cells (font, color, alignment, merge/unmerge) |
+| `inspect` | Inspect document structure (paragraphs, tables, images) |
+| `insert_para` | Insert a paragraph |
+| `modify_para` | Modify paragraph text |
+| `format_para` | Format a paragraph (style, alignment, font) |
+| `delete_para` | Delete a paragraph |
+| `insert_table` | Insert a table with optional data |
+| `modify_table` | Modify a table cell |
+| `format_table` | Apply a table style |
+| `delete_table` | Delete a table |
+| `insert_image` | Insert an image |
+| `delete_image` | Delete an inline image |
+
+### Architecture
+
+```
+Application Layer (MCP tools)
+    ↓ workbook/doc operations via openpyxl / python-docx
+Library Layer (openpyxl, python-docx)
+    ↓ stateless per-call: open → operate → save → close
+File Layer (.xlsx, .docx)
+```
+
+- Stateless per-call pattern: each tool opens file, performs operation, saves, closes
+- `create_sheet` creates workbook if file doesn't exist; other Excel tools require existing file
+- `insert_para` / `insert_table` / `insert_image` create document if file doesn't exist
+- Split modules: `excel.py` (16 tools), `word.py` (11 tools), shared `_mcp.py` FastMCP instance
+- Word insert-by-index uses XML manipulation (`_element.addprevious()`)
+- Word `delete_image` only handles inline shapes (python-docx limitation)
+
 ## Adding a New MCP Server
 
 1. Create directory: `packages/carrot-mcp-<name>/`

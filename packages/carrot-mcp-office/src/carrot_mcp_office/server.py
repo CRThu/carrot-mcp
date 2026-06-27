@@ -3,9 +3,9 @@
 import sys
 from importlib.metadata import version as pkg_version
 
-from mcp.server.fastmcp import FastMCP
-
-mcp = FastMCP("carrot-mcp-office")
+from carrot_mcp_office._mcp import mcp
+from carrot_mcp_office import excel  # noqa: F401
+from carrot_mcp_office import word  # noqa: F401
 
 
 @mcp.tool()
@@ -20,12 +20,6 @@ def version() -> dict:
         "name": "carrot-mcp-office",
         "version": pkg_version("carrot-mcp-office"),
     }
-
-
-@mcp.tool()
-def hello(name: str = "World") -> str:
-    """Say hello to someone."""
-    return f"Hello, {name}! From Carrot MCP Office."
 
 
 def main():
