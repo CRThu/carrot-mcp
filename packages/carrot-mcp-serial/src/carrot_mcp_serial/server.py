@@ -1,18 +1,23 @@
 """Carrot MCP Serial Server - pyserial wrapper"""
 
+import atexit
 import sys
+import time
 from importlib.metadata import version as pkg_version
 from typing import Any, Optional
-
-import time
 
 import serial
 import serial.tools.list_ports
 from mcp.server.fastmcp import FastMCP
 
+from .channel import Channel
+from .logger import HistoryLogger
+from .transport import SerialTransport
+
 mcp = FastMCP("carrot-mcp-serial")
 
-_ports: dict[str, serial.Serial] = {}
+_channels: dict[str, Channel] = {}
+_loggers: dict[str, HistoryLogger] = {}
 
 
 def _encode(data: bytes, fmt: str) -> str:
@@ -31,14 +36,25 @@ def _format_result(data: bytes, fmt: str) -> dict:
     return {"length": len(data), "data": _encode(data, fmt)}
 
 
-def _get_port(port: str) -> serial.Serial | None:
-    ser = _ports.get(port)
-    if ser is None:
+def _cleanup_channel(port: str) -> None:
+    """Close channel + remove from registry. Safe to call multiple times."""
+    ch = _channels.pop(port, None)
+    _loggers.pop(port, None)
+    if ch is not None:
+        try:
+            ch.close()
+        except Exception:
+            pass
+
+
+def _get_channel(port: str) -> Channel | None:
+    ch = _channels.get(port)
+    if ch is None:
         return None
-    if not ser.is_open:
-        _ports.pop(port, None)
+    if not ch.is_open:
+        _cleanup_channel(port)
         return None
-    return ser
+    return ch
 
 
 @mcp.tool()
@@ -56,16 +72,16 @@ def version() -> dict:
 
 
 @mcp.tool()
-def list_ports() -> list[dict[str, str]]:
+def list_ports() -> list[dict[str, str]] | dict[str, str]:
     """List available serial ports.
 
     Returns:
-        List of {port, description, hwid}
+        List of {port, description, hwid} or {status, message} on error
     """
     try:
         ports = serial.tools.list_ports.comports()
     except Exception as e:
-        return [{"status": "error", "message": str(e)}]
+        return {"status": "error", "message": str(e)}
     return [
         {
             "port": p.device,
@@ -102,7 +118,7 @@ def open(
     Returns:
         {status, port, baudrate} or {status, message} on error
     """
-    existing = _get_port(port)
+    existing = _get_channel(port)
     if existing:
         return {"status": "ok", "message": f"{port} is already open"}
 
@@ -113,14 +129,34 @@ def open(
             bytesize=bytesize,
             parity=parity,
             stopbits=stopbits,
-            timeout=read_timeout,
-            write_timeout=write_timeout,
+            timeout=1.0,
+            write_timeout=1.0,
         )
-        ser.set_buffer_size(rx_size=buffer_size, tx_size=buffer_size)
-        _ports[port] = ser
-        return {"status": "ok", "port": port, "baudrate": baudrate}
     except serial.SerialException as e:
         return {"status": "error", "message": str(e)}
+
+    try:
+        transport = SerialTransport(ser)
+        ch = Channel(
+            transport,
+            rx_maxlen=buffer_size,
+            tx_maxlen=buffer_size,
+            read_timeout=read_timeout,
+            write_timeout=write_timeout,
+        )
+        ch.set_buffer_size(rx_size=buffer_size, tx_size=buffer_size)
+
+        logger = HistoryLogger(max_entries=100)
+        ch.attach(logger.on_event)
+
+        ch.start()
+        _channels[port] = ch
+        _loggers[port] = logger
+
+        return {"status": "ok", "port": port, "baudrate": baudrate}
+    except Exception:
+        ser.close()
+        return {"status": "error", "message": f"Failed to initialize channel for {port}"}
 
 
 @mcp.tool()
@@ -130,11 +166,12 @@ def close(port: str) -> dict:
     Returns:
         {status, port}
     """
-    ser = _ports.pop(port, None)
-    if ser is None:
+    ch = _channels.pop(port, None)
+    _loggers.pop(port, None)
+    if ch is None:
         return {"status": "error", "message": f"{port} is not open"}
     try:
-        ser.close()
+        ch.close()
     except Exception:
         pass
     return {"status": "ok", "port": port}
@@ -142,43 +179,40 @@ def close(port: str) -> dict:
 
 @mcp.tool()
 def read(port: str, size: int = 256, fmt: str = "hex", timeout: Optional[float] = None) -> dict:
-    """Read data from an open serial port. Blocks until data available or timeout.
+    """Read data from buffer. If buffer empty, blocks until data available or timeout.
 
     Args:
         port: Serial port name
         size: Max bytes to read (default 256)
         fmt: Output format - "hex" or "ascii" (default "hex")
-        timeout: Override read timeout in seconds (optional)
+        timeout: Override read timeout in seconds (optional, None=use port timeout)
 
     Returns:
         {status, length, data}
     """
-    ser = _get_port(port)
-    if ser is None:
+    ch = _get_channel(port)
+    if ch is None:
         return {"status": "error", "message": f"{port} is not open"}
 
     try:
-        old_timeout = ser.timeout
-        if timeout is not None:
-            ser.timeout = timeout
-        data = ser.read(size)
-        if timeout is not None:
-            ser.timeout = old_timeout
-        if not data:
-            result = _format_result(b"", fmt)
-            result["status"] = "ok"
-            return result
+        data = ch.read(size)
+
+        if not data and timeout != 0:
+            wait_time = timeout if timeout is not None else ch.read_timeout
+            if wait_time and wait_time > 0:
+                data = ch.wait_read(size, wait_time)
+
         result = _format_result(data, fmt)
         result["status"] = "ok"
         return result
     except serial.SerialException as e:
-        _ports.pop(port, None)
+        _cleanup_channel(port)
         return {"status": "error", "message": str(e)}
 
 
 @mcp.tool()
 def recv(port: str, size: Optional[int] = None, fmt: str = "hex") -> dict:
-    """Non-blocking read. Returns whatever is available in the buffer right now.
+    """Non-blocking read. Returns whatever is available in the buffer.
 
     Args:
         port: Serial port name
@@ -188,22 +222,21 @@ def recv(port: str, size: Optional[int] = None, fmt: str = "hex") -> dict:
     Returns:
         {status, length, data}
     """
-    ser = _get_port(port)
-    if ser is None:
+    ch = _get_channel(port)
+    if ch is None:
         return {"status": "error", "message": f"{port} is not open"}
 
     try:
-        n = size if size is not None else ser.in_waiting
-        data = ser.read(n) if n > 0 else b""
-        if not data:
-            result = _format_result(b"", fmt)
-            result["status"] = "ok"
-            return result
+        if size is None:
+            data = ch.read_all()
+        else:
+            data = ch.read(size)
+
         result = _format_result(data, fmt)
         result["status"] = "ok"
         return result
     except serial.SerialException as e:
-        _ports.pop(port, None)
+        _cleanup_channel(port)
         return {"status": "error", "message": str(e)}
 
 
@@ -219,8 +252,8 @@ def write(port: str, hex: Optional[str] = None, ascii: Optional[str] = None) -> 
     Returns:
         {status, bytes_written} or {status, message} on error
     """
-    ser = _get_port(port)
-    if ser is None:
+    ch = _get_channel(port)
+    if ch is None:
         return {"status": "error", "message": f"{port} is not open"}
 
     if hex and ascii:
@@ -233,28 +266,47 @@ def write(port: str, hex: Optional[str] = None, ascii: Optional[str] = None) -> 
             return {"status": "error", "message": "Invalid hex string"}
     elif ascii:
         try:
-            raw = ascii.encode("ascii").decode("unicode_escape").encode("raw_unicode_escape")
+            raw = _decode(ascii, "ascii")
         except (ValueError, UnicodeDecodeError):
             return {"status": "error", "message": "Invalid ascii string"}
     else:
         return {"status": "error", "message": "Provide hex or ascii"}
 
     try:
-        written = ser.write(raw)
+        written = ch.write(raw)
         return {"status": "ok", "bytes_written": written}
     except serial.SerialTimeoutException:
         return {"status": "error", "message": "Write timed out"}
     except serial.SerialException as e:
-        _ports.pop(port, None)
+        _cleanup_channel(port)
         return {"status": "error", "message": str(e)}
 
 
-def _exec_step(ser: serial.Serial, step: dict, fmt: str) -> dict:
+@mcp.tool()
+def history(port: str, limit: int = 50) -> dict:
+    """Get operation history for a serial port.
+
+    Args:
+        port: Serial port name
+        limit: Max entries to return (default 50)
+
+    Returns:
+        {status, entries: [{ts, op, data, length, pending}]}
+    """
+    logger = _loggers.get(port)
+    if logger is None:
+        return {"status": "error", "message": f"{port} is not open"}
+
+    entries = logger.get_entries(limit=limit)
+    return {"status": "ok", "entries": entries}
+
+
+def _exec_step(ch: Channel, step: dict, fmt: str) -> dict:
     op = step.get("op")
     if op == "write":
         data = step.get("data", "")
         raw = _decode(data, fmt)
-        written = ser.write(raw)
+        written = ch.write(raw)
         return {"op": "write", "status": "ok", "bytes_written": written}
     elif op == "read":
         size = step.get("size", 256)
@@ -262,10 +314,9 @@ def _exec_step(ser: serial.Serial, step: dict, fmt: str) -> dict:
         expect = step.get("expect")
         on_mismatch = step.get("on_mismatch", "stop")
 
-        old_timeout = ser.timeout
-        ser.timeout = timeout
-        data = ser.read(size)
-        ser.timeout = old_timeout
+        data = ch.read(size)
+        if not data and timeout > 0:
+            data = ch.wait_read(size, timeout)
 
         result = {"op": "read", "status": "ok"}
         result["data"] = _encode(data, fmt)
@@ -287,8 +338,8 @@ def _exec_step(ser: serial.Serial, step: dict, fmt: str) -> dict:
         time.sleep(ms / 1000.0)
         return {"op": "wait", "status": "ok", "ms": ms}
     elif op == "flush":
-        ser.reset_input_buffer()
-        ser.reset_output_buffer()
+        ch.reset_input_buffer()
+        ch.reset_output_buffer()
         return {"op": "flush", "status": "ok"}
     else:
         return {"op": op, "status": "error", "message": f"Unknown op: {op}"}
@@ -318,26 +369,33 @@ def script(port: str, steps: list[dict[str, Any]], fmt: str = "hex") -> list[dic
         - On error: {message}
         Stops on first error (exception or mismatch with on_mismatch="stop").
     """
-    ser = _get_port(port)
-    if ser is None:
+    ch = _get_channel(port)
+    if ch is None:
         return [{"op": "script", "status": "error", "message": f"{port} is not open"}]
 
     results = []
     for i, step in enumerate(steps):
         try:
-            result = _exec_step(ser, step, fmt)
+            result = _exec_step(ch, step, fmt)
             result["step"] = i
             results.append(result)
             if result.get("status") == "error":
                 break
         except serial.SerialException as e:
-            _ports.pop(port, None)
+            _cleanup_channel(port)
             results.append({"op": step.get("op"), "step": i, "status": "error", "message": str(e)})
             break
     return results
 
 
+def _shutdown_all() -> None:
+    """Close all open channels on server exit."""
+    for port in list(_channels):
+        _cleanup_channel(port)
+
+
 def main():
+    atexit.register(_shutdown_all)
     print("carrot-mcp-serial server ready", file=sys.stderr)
     mcp.run()
 

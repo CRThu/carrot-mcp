@@ -12,8 +12,9 @@ Carrot MCP Serial Server - pyserial wrapper for serial port communication.
 | `close` | Close a serial port connection |
 | `read` | Blocking read with timeout |
 | `recv` | Non-blocking read from buffer |
-| `write` | Write data (hex or ascii with escape support) |
+| `write` | Buffered write (hex or ascii with escape support) |
 | `script` | Execute a sequence of serial operations (write/read/wait/flush) |
+| `history` | Get operation history for a port |
 
 ## Examples
 
@@ -29,6 +30,12 @@ uvx carrot-mcp-serial@latest
   }
 }
 ```
+
+## Buffer Behavior (Backpressure)
+
+- **RX buffer**: when full, the poll thread stops reading from hardware. Data stays in the OS serial buffer until the consumer frees space. No data is silently dropped.
+- **TX buffer**: when full, `write()` blocks until the poll thread drains enough space. If `write_timeout` expires, a `TimeoutError` is raised.
+- Buffer size is configurable via the `buffer_size` parameter on `open` (default 1MB).
 
 ## Return Format
 

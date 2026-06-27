@@ -25,6 +25,10 @@ carrot-mcp/
 └── tests/
     ├── ds/
     ├── serial/
+    │   ├── test_transport.py
+    │   ├── test_channel.py
+    │   ├── test_logger.py
+    │   └── test_server.py
     └── nfc/
 ```
 
@@ -38,7 +42,10 @@ uv sync --all-packages
 uv run pytest
 
 # Run tests for specific server
-uv run pytest tests/serial/test_serial.py -v
+uv run pytest tests/serial/ -v
+
+# Run single test module
+uv run pytest tests/serial/test_channel.py -v
 
 # Run servers
 uv run carrot-mcp ds
@@ -67,10 +74,53 @@ uv run python -m carrot_mcp_ds
 | `list_ports` | List available serial ports |
 | `open` | Open a serial port (baudrate, parity, timeouts, buffer_size) |
 | `close` | Close a serial port |
-| `read` | Blocking read with timeout |
-| `recv` | Non-blocking read from buffer |
+| `read` | Blocking read from buffer with timeout |
+| `recv` | Non-blocking read from buffer (returns available data) |
 | `write` | Write data (hex or ascii with escape support) |
 | `script` | Execute a sequence of serial operations (write/read/wait/flush) |
+| `history` | Get operation history for a port |
+
+### Architecture
+
+```
+Application Layer (MCP tools)
+    ↓ read/write (all via Channel buffers)
+Channel Layer (Channel: RX/TX buffers with backpressure, Event-driven wait, observer events)
+    ↓ polling via daemon thread (only thread touching hardware)
+Transport Layer (Transport ABC → SerialTransport)
+    ↓ raw I/O
+Hardware Layer (serial.Serial)
+```
+
+**Separation of concerns (low coupling, high cohesion):**
+
+- `transport.py`: `Transport` ABC + `SerialTransport` — pure FIFO interface (read/write/buffer-status/close), context manager support, no wait/blocking semantics
+- `channel.py`: `Channel` — wraps Transport, provides RX/TX deque buffers with backpressure, independent locks (`_rx_lock` / `_tx_lock`), background polling via daemon thread + `threading.Event`, emits `ChannelEvent` to observers
+- `logger.py`: `HistoryLogger` — external observer, plugs into Channel via `attach()`, records operation history independently
+
+**Channel design:**
+- RX/TX dual buffers (deque-based, configurable capacity)
+- **Backpressure model**: RX full → poll thread stops reading from hardware (data stays in OS serial buffer); TX full → `tx_enqueue()` blocks until drain creates space (with `_write_timeout`)
+- **Locks**:
+  - `_rx_lock` — protects RX buffer reads/writes (`read`, `read_all`, `peek`, `rx_pending`, `total_rx`)
+  - `_tx_lock` — protects TX buffer reads/writes (`tx_enqueue`, `tx_dequeue`, `tx_pending`, `total_tx`)
+  - `_write_lock` — serializes `write()` and `flush()` calls (prevents `_drain_done` Event signal loss between concurrent callers)
+- `_tx_cond` (`threading.Condition`) — TX backpressure signaling between `tx_enqueue()` and `_drain_tx()`
+- All hardware I/O performed by poll thread only — callers only touch buffers (thread-safe)
+- `read_timeout` / `write_timeout` are caller-provided, passed through from server (hardware-level timeouts in `serial.Serial` are hardcoded to 1.0)
+- `write()` acquires `_write_lock`, enqueues to TX buffer, blocks via `Event.wait()` until drain completes
+- `flush()` acquires `_write_lock`, uses event-driven wait (clear + wait on `_drain_done`), not polling
+- `wait_read()` uses `_rx_lock` to protect `_data_ready.clear()` from signal loss
+- `_emit()` called **outside** locks to prevent observer deadlock
+- Poll thread is daemon — process exits cleanly without explicit `stop()`
+- TX/RX cumulative byte counters (`total_tx` / `total_rx`) — read under respective locks
+- Observer pattern: `attach(observer)` / `detach(observer)`, observers receive `ChannelEvent`
+- Channel never knows about history/logging — that's the observer's job
+
+**Server resource management:**
+- `_cleanup_channel(port)`: centralized cleanup — close channel, remove from registry (safe to call multiple times)
+- `_shutdown_all()` registered via `atexit` — closes all open channels on server exit
+- All exception handlers call `_cleanup_channel()` instead of ad-hoc pop
 
 ### Script Tool Details
 
@@ -102,9 +152,10 @@ Example:
    <name> = "carrot_mcp_<name>.server:mcp"
    ```
 3. Create `src/carrot_mcp_<name>/server.py` with FastMCP
-4. Add `version` tool using `importlib.metadata.version`
-5. Add to root `pyproject.toml` dependencies and uv.sources
-6. Write tests in `tests/<name>/`
+4. Create `src/carrot_mcp_<name>/__main__.py` (allows `python -m carrot_mcp_<name>`)
+5. Add `version` tool using `importlib.metadata.version`
+6. Add to root `pyproject.toml` dependencies and uv.sources
+7. Write tests in `tests/<name>/`
 
 CLI auto-discovers servers via entry points - no need to update cli.py.
 

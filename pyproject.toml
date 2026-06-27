@@ -20,9 +20,6 @@ all = [
     "carrot-mcp-serial",
     "carrot-mcp-nfc",
 ]
-dev = [
-    "pytest>=7.0",
-]
 
 [project.scripts]
 carrot-mcp = "carrot_mcp.cli:main"

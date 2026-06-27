@@ -1,3 +1,3 @@
-# carrot-mcp-datasheet
+# carrot-mcp-ds
 
 Carrot MCP Datasheet Server.

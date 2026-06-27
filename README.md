@@ -51,15 +51,15 @@ uvx carrot-mcp-nfc@latest
 ### CLI
 
 ```bash
-# 列出所有可用 server
+# List all available servers
 carrot-mcp list
 
-# 运行指定 server
+# Run a specific server
 carrot-mcp ds
 carrot-mcp serial
 carrot-mcp nfc
 
-# uv 运行
+# Run with uv
 uv run carrot-mcp ds
 ```
 
@@ -84,12 +84,14 @@ python -m carrot_mcp_nfc
 | Tool | Description |
 |------|-------------|
 | `version` | Get server version info |
-| `list` | List available serial ports |
-| `open` | Open a serial port (baudrate, parity, timeouts) |
+| `list_ports` | List available serial ports |
+| `open` | Open a serial port (baudrate, parity, timeouts, buffer_size) |
 | `close` | Close a serial port |
-| `read` | Blocking read with timeout |
+| `read` | Blocking read from buffer with timeout |
 | `recv` | Non-blocking read from buffer |
 | `write` | Write data (hex or ascii with escape support) |
+| `script` | Execute a sequence of serial operations (write/read/wait/flush) |
+| `history` | Get operation history for a port |
 
 ## MCP Configuration
 
