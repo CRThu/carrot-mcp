@@ -109,8 +109,11 @@ class Channel:
         self._observers.append(observer)
 
     def detach(self, observer: Observer) -> None:
-        """Unregister an event observer."""
-        self._observers.remove(observer)
+        """Unregister an event observer. No-op if not attached."""
+        try:
+            self._observers.remove(observer)
+        except ValueError:
+            pass
 
     def _emit(self, event: ChannelEvent) -> None:
         """Notify all observers of an event."""
@@ -279,8 +282,9 @@ class Channel:
                 if not self._tx_cond.wait(timeout=self._write_timeout):
                     raise TimeoutError("TX buffer full, write timed out")
             self._tx.append(data)
+            pending = sum(len(c) for c in self._tx)
             self._tx_cond.notify_all()
-        self._emit(ChannelEvent("tx_queue", data, sum(len(c) for c in self._tx)))
+        self._emit(ChannelEvent("tx_queue", data, pending))
         return len(data)
 
     def tx_dequeue(self, size: int) -> bytes:

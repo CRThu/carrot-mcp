@@ -114,7 +114,7 @@ Hardware Layer (serial.Serial)
 - `_emit()` called **outside** locks to prevent observer deadlock
 - Poll thread is daemon — process exits cleanly without explicit `stop()`
 - TX/RX cumulative byte counters (`total_tx` / `total_rx`) — read under respective locks
-- Observer pattern: `attach(observer)` / `detach(observer)`, observers receive `ChannelEvent`
+- Observer pattern: `attach(observer)` / `detach(observer)` — detach is no-op if observer not attached
 - Channel never knows about history/logging — that's the observer's job
 
 **Server resource management:**

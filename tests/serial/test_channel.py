@@ -317,6 +317,25 @@ def test_detach_observer():
     assert len(events) == 0
 
 
+def test_detach_nonexistent_observer():
+    ch, _ = _make_channel()
+    observer = lambda e: None
+    ch.detach(observer)  # should not raise
+
+
+def test_detach_twice():
+    ch, _ = _make_channel()
+    events = []
+    observer = lambda e: events.append(e)
+    ch.attach(observer)
+    ch.detach(observer)
+    ch.detach(observer)  # second detach should not raise
+
+    ch._rx.append(b"\x01")
+    ch.read(1)
+    assert len(events) == 0
+
+
 def test_observer_exception_doesnt_crash():
     ch, _ = _make_channel()
     good_events = []
