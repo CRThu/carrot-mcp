@@ -37,7 +37,7 @@ class VersionsMeta:
     max_versions: int = field(default_factory=lambda: MAX_VERSIONS)
 
 
-def _backup_root() -> Path:
+def backup_root() -> Path:
     """Return the backup root directory, creating it if needed."""
     override = os.environ.get("CARROT_MCP_BACKUP_ROOT")
     if override:
@@ -58,11 +58,13 @@ def _mirror_path(original: str) -> Path:
     D:\\docs\\reports\\file.xlsx -> backup_root/D/docs/reports/file (no ext)
     """
     p = Path(original)
-    root = _backup_root()
+    root = backup_root()
     drive = p.drive.rstrip(":") if p.drive else "_"
     parts = list(p.parts[1:])
     stem = p.stem
-    return root / drive / Path(*parts[:-1]) / stem if len(parts) > 1 else root / drive / stem
+    if len(parts) > 1:
+        return root / drive / Path(*parts[:-1]) / stem
+    return root / drive / stem
 
 
 def _versions_json_path(original: str) -> Path:
@@ -134,7 +136,7 @@ def _prune_versions(meta: VersionsMeta) -> list[VersionEntry]:
 
 def _update_root_timestamp() -> None:
     """Update the last-modified timestamp in backup root."""
-    root = _backup_root()
+    root = backup_root()
     ts_file = root / "_last_modified.txt"
     ts_file.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
 

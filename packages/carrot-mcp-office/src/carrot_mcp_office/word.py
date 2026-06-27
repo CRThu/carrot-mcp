@@ -8,8 +8,7 @@ from docx import Document
 from docx.shared import Inches, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
-from carrot_mcp_office._mcp import mcp
-from carrot_mcp_office.backup import save_version
+from carrot_mcp_office._mcp import mcp, _save_and_return
 from carrot_mcp_office.convert import ensure_docx_format
 
 
@@ -28,14 +27,6 @@ def _handle_docx(path: str) -> tuple[str, dict | None]:
     if err:
         return path, {"status": "error", "message": err}
     return resolved, None
-
-
-def _save_and_return(path: str, tool: str, result: dict) -> dict:
-    """Add version to result and save backup."""
-    ver = save_version(path, tool)
-    if ver is not None:
-        result["version"] = ver
-    return result
 
 
 @mcp.tool()
@@ -228,13 +219,15 @@ def insert_table(path: str, rows: int, cols: int, data: list[list] | None = None
         doc = _open_or_create_document(path)
         if data and (len(data) != rows or any(len(row) != cols for row in data)):
             return {"status": "error", "message": "Data dimensions don't match rows/cols"}
+        ref_table = None
+        if index is not None and index < len(doc.tables):
+            ref_table = doc.tables[index]
         table = doc.add_table(rows=rows, cols=cols)
         if data:
             for r_idx, row in enumerate(data):
                 for c_idx, val in enumerate(row):
                     table.rows[r_idx].cells[c_idx].text = str(val) if val is not None else ""
-        if index is not None and index < len(doc.tables) - 1:
-            ref_table = doc.tables[index]
+        if ref_table is not None:
             ref_table._element.addprevious(table._element)
         doc.save(path)
         return _save_and_return(path, "insert_table", {"status": "ok", "rows": rows, "cols": cols, "index": index if index is not None else len(doc.tables) - 1})
@@ -343,8 +336,8 @@ def insert_image(path: str, image_path: str, index: int | None = None, width: fl
         if index is None or index >= len(doc.paragraphs):
             para = doc.add_paragraph()
         else:
-            para = doc.add_paragraph()
             ref_para = doc.paragraphs[index]
+            para = doc.add_paragraph()
             ref_para._element.addprevious(para._element)
         run = para.add_run()
         if width:

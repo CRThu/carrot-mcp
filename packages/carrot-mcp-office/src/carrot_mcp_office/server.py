@@ -6,7 +6,7 @@ from importlib.metadata import version as pkg_version
 from carrot_mcp_office._mcp import mcp
 from carrot_mcp_office import excel  # noqa: F401
 from carrot_mcp_office import word  # noqa: F401
-from carrot_mcp_office.backup import list_versions, restore_version, _backup_root, MAX_VERSIONS, MAX_AGE_DAYS
+from carrot_mcp_office.backup import list_versions, restore_version, backup_root, MAX_VERSIONS, MAX_AGE_DAYS
 
 
 @mcp.tool()
@@ -21,7 +21,7 @@ def version() -> dict:
         "name": "carrot-mcp-office",
         "version": pkg_version("carrot-mcp-office"),
         "backup": {
-            "root": str(_backup_root()),
+            "root": str(backup_root()),
             "max_versions": MAX_VERSIONS,
             "max_age_days": MAX_AGE_DAYS,
         },

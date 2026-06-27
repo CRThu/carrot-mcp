@@ -29,10 +29,14 @@ def _cleanup(original_path):
     mirror = _mirror_path(original_path)
     if mirror.parent.exists():
         shutil.rmtree(mirror.parent, ignore_errors=True)
+    d = os.path.dirname(original_path)
+    if os.path.exists(d):
+        shutil.rmtree(d, ignore_errors=True)
 
 
 def _xlsx():
-    return os.path.join(tempfile.gettempdir(), "test_office.xlsx")
+    d = tempfile.mkdtemp(prefix="test_office_")
+    return os.path.join(d, "test.xlsx")
 
 
 def test_create_sheet_new_file():
@@ -435,6 +439,130 @@ def test_read_chart():
         result = read_chart(path, "Data")
         assert result["status"] == "ok"
         assert result["count"] == 1
+    finally:
+        _cleanup(path)
+        if os.path.exists(path):
+            os.unlink(path)
+
+
+def test_format_range_unmerge():
+    path = _xlsx()
+    try:
+        create_sheet(path, "Data")
+        format_range(path, "Data", "A1", "B2", merge=True)
+        import openpyxl
+        wb = openpyxl.load_workbook(path)
+        assert len(list(wb["Data"].merged_cells.ranges)) == 1
+        wb.close()
+        format_range(path, "Data", "A1", "B2", unmerge=True)
+        wb = openpyxl.load_workbook(path)
+        assert len(list(wb["Data"].merged_cells.ranges)) == 0
+        wb.close()
+    finally:
+        _cleanup(path)
+        if os.path.exists(path):
+            os.unlink(path)
+
+
+def test_format_range_number_format():
+    path = _xlsx()
+    try:
+        create_sheet(path, "Data")
+        write_range(path, "Data", "A1", [[1234.56]])
+        result = format_range(path, "Data", "A1", "A1", number_format="#,##0.00")
+        assert result["status"] == "ok"
+    finally:
+        _cleanup(path)
+        if os.path.exists(path):
+            os.unlink(path)
+
+
+def test_format_range_font_color():
+    path = _xlsx()
+    try:
+        create_sheet(path, "Data")
+        write_range(path, "Data", "A1", [["Red"]])
+        result = format_range(path, "Data", "A1", "A1", font_color="FF0000", bold=True)
+        assert result["status"] == "ok"
+    finally:
+        _cleanup(path)
+        if os.path.exists(path):
+            os.unlink(path)
+
+
+def test_write_range_formula():
+    path = _xlsx()
+    try:
+        create_sheet(path, "Data")
+        write_range(path, "Data", "A1", [[10, 20, "=A1+B1"]])
+        result = read_range(path, "Data", "C1")
+        assert result["status"] == "ok"
+        assert result["value"] == "=A1+B1"
+    finally:
+        _cleanup(path)
+        if os.path.exists(path):
+            os.unlink(path)
+
+
+def test_delete_sheet_not_found():
+    path = _xlsx()
+    try:
+        create_sheet(path, "Sheet1")
+        result = delete_sheet(path, "Nonexistent")
+        assert result["status"] == "error"
+        assert "not found" in result["message"]
+    finally:
+        _cleanup(path)
+        if os.path.exists(path):
+            os.unlink(path)
+
+
+def test_insert_rows_not_found():
+    path = _xlsx()
+    try:
+        create_sheet(path, "Sheet1")
+        result = insert_rows(path, "Nonexistent", 1)
+        assert result["status"] == "error"
+        assert "not found" in result["message"]
+    finally:
+        _cleanup(path)
+        if os.path.exists(path):
+            os.unlink(path)
+
+
+def test_delete_rows_not_found():
+    path = _xlsx()
+    try:
+        create_sheet(path, "Sheet1")
+        result = delete_rows(path, "Nonexistent", 1)
+        assert result["status"] == "error"
+        assert "not found" in result["message"]
+    finally:
+        _cleanup(path)
+        if os.path.exists(path):
+            os.unlink(path)
+
+
+def test_insert_columns_not_found():
+    path = _xlsx()
+    try:
+        create_sheet(path, "Sheet1")
+        result = insert_columns(path, "Nonexistent", 1)
+        assert result["status"] == "error"
+        assert "not found" in result["message"]
+    finally:
+        _cleanup(path)
+        if os.path.exists(path):
+            os.unlink(path)
+
+
+def test_delete_columns_not_found():
+    path = _xlsx()
+    try:
+        create_sheet(path, "Sheet1")
+        result = delete_columns(path, "Nonexistent", 1)
+        assert result["status"] == "error"
+        assert "not found" in result["message"]
     finally:
         _cleanup(path)
         if os.path.exists(path):

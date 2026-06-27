@@ -9,8 +9,7 @@ from openpyxl.utils import cell as xl_cell
 from openpyxl.chart import BarChart, LineChart, PieChart, ScatterChart, Reference
 from openpyxl.styles import Font, Alignment
 
-from carrot_mcp_office._mcp import mcp
-from carrot_mcp_office.backup import save_version
+from carrot_mcp_office._mcp import mcp, _save_and_return
 from carrot_mcp_office.convert import ensure_xlsx_format
 
 
@@ -40,14 +39,6 @@ def _handle_xlsx(path: str) -> tuple[str, dict | None]:
     if err:
         return path, {"status": "error", "message": err}
     return resolved, None
-
-
-def _save_and_return(path: str, tool: str, result: dict) -> dict:
-    """Add version to result and save backup."""
-    ver = save_version(path, tool)
-    if ver is not None:
-        result["version"] = ver
-    return result
 
 
 @mcp.tool()
