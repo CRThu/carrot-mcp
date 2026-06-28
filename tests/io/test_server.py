@@ -315,6 +315,7 @@ def test_open_attaches_logger(mock_serial_cls):
 @patch("carrot_mcp_io.server.socket.socket")
 def test_open_tcp_success(mock_socket_cls):
     mock_sock = MagicMock()
+    mock_sock.recv.return_value = b""
     mock_socket_cls.return_value = mock_sock
     result = open("device1", transport="tcp", host="192.168.1.100", net_port=5000)
     assert result["status"] == "ok"
@@ -354,6 +355,7 @@ def test_open_tcp_connection_error(mock_socket_cls):
 @patch("carrot_mcp_io.server.socket.socket")
 def test_open_udp_success(mock_socket_cls):
     mock_sock = MagicMock()
+    mock_sock.recvfrom.return_value = (b"", None)
     mock_socket_cls.return_value = mock_sock
     result = open("device1", transport="udp", host="192.168.1.100", net_port=5000)
     assert result["status"] == "ok"

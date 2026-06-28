@@ -324,8 +324,8 @@ class Channel:
         Raises the original exception if hardware write fails.
         """
         with self._write_lock:
-            n = self.tx_enqueue(data)
             self._drain_done.clear()
+            n = self.tx_enqueue(data)
             drained = self._drain_done.wait(timeout=self._write_timeout)
             with self._tx_lock:
                 if self._write_error is not None:
