@@ -62,6 +62,39 @@ def _read_image_as_base64(image_path: str) -> tuple[str, str]:
     return f"data:{mime};base64,{b64}", mime
 
 
+def _render_page_as_image(pdf_path: str, page_num: int, dpi: int = 300) -> str:
+    """Render a PDF page as a PNG image file. Returns path to the temp image."""
+    doc = pymupdf.open(pdf_path)
+    page = doc[page_num - 1]
+    zoom = dpi / 72
+    mat = pymupdf.Matrix(zoom, zoom)
+    pix = page.get_pixmap(matrix=mat)
+    tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+    pix.save(tmp.name)
+    doc.close()
+    return tmp.name
+
+
+def _ocr_page(pdf_path: str, page_num: int) -> list[dict]:
+    """Force OCR on a PDF page by rendering it as an image."""
+    if not _vlm_configured():
+        return [{"type": "text", "data": "[VLM model not configured, cannot force OCR]"}]
+
+    image_path = _render_page_as_image(pdf_path, page_num)
+    try:
+        ocr_result = recognize_image(
+            image_path,
+            model=VISION_MODEL,
+            api_key=VISION_API_KEY,
+            proxy=VISION_PROXY,
+        )
+        return [{"type": "text", "data": ocr_result}]
+    except Exception:
+        return [{"type": "text", "data": "[Force OCR failed]"}]
+    finally:
+        os.unlink(image_path)
+
+
 def _parse_page_content(text: str, image_dir: str, multimodal: bool) -> list[dict]:
     """Parse pymupdf4llm markdown output into ordered content blocks.
 
@@ -205,7 +238,7 @@ def get_toc(pdf_path: str) -> dict:
 
 
 @mcp.tool()
-def get_pages(pdf_path: str, pages: str, multimodal: bool = True) -> dict:
+def get_pages(pdf_path: str, pages: str, multimodal: bool = True, force_ocr: bool = False) -> dict:
     """Convert specific PDF pages to markdown.
 
     Args:
@@ -213,9 +246,12 @@ def get_pages(pdf_path: str, pages: str, multimodal: bool = True) -> dict:
         pages: Page range string, e.g. '1-5,8,10-12'.
         multimodal: If True, return images as base64 that you can analyze.
                     If False, send images to internal vlm for OCR and return contents of images.
+        force_ocr: Force OCR on entire page as image. Use when normal conversion
+                   produces garbled text or missing content. Results are cached with
+                   force_ocr flag for this PDF.
 
     Returns:
-        {status, pages: {page_num: {content: [{type, data/base64/mime}]}}, total_pages}
+        {status, pages: {page_num: {content: [{type, data/base64/mime}], force_ocr: bool}}, total_pages}
     """
     if not os.path.exists(pdf_path):
         return {"status": "error", "message": f"File not found: {pdf_path}"}
@@ -236,34 +272,43 @@ def get_pages(pdf_path: str, pages: str, multimodal: bool = True) -> dict:
         }
 
     cached_pages = cache.get("pages", {})
-    uncached = [p for p in page_list if str(p) not in cached_pages]
+
+    if force_ocr:
+        uncached = [p for p in page_list if str(p) not in cached_pages or not cached_pages.get(str(p), {}).get("force_ocr")]
+    else:
+        uncached = [p for p in page_list if str(p) not in cached_pages]
 
     if uncached:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            image_dir = os.path.join(tmp_dir, "images")
-            os.makedirs(image_dir, exist_ok=True)
+        if force_ocr:
+            for page_num in uncached:
+                content = _ocr_page(pdf_path, page_num)
+                cached_pages[str(page_num)] = {"content": content, "force_ocr": True}
+        else:
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                image_dir = os.path.join(tmp_dir, "images")
+                os.makedirs(image_dir, exist_ok=True)
 
-            try:
-                page_chunks = pymupdf4llm.to_markdown(
-                    pdf_path,
-                    pages=[p - 1 for p in uncached],
-                    write_images=True,
-                    image_path=image_dir,
-                    header=False,
-                    footer=False,
-                    use_ocr=False,
-                )
-            except Exception as e:
-                return {"status": "error", "message": f"Conversion failed: {e}"}
+                try:
+                    page_chunks = pymupdf4llm.to_markdown(
+                        pdf_path,
+                        pages=[p - 1 for p in uncached],
+                        write_images=True,
+                        image_path=image_dir,
+                        header=False,
+                        footer=False,
+                        use_ocr=False,
+                    )
+                except Exception as e:
+                    return {"status": "error", "message": f"Conversion failed: {e}"}
 
-            if isinstance(page_chunks, dict):
-                page_chunks = [page_chunks]
+                if isinstance(page_chunks, dict):
+                    page_chunks = [page_chunks]
 
-            for i, chunk in enumerate(page_chunks):
-                page_num = uncached[i] if i < len(uncached) else chunk.get("metadata", {}).get("page", i + 1)
-                text = chunk.get("text", "")
-                content = _parse_page_content(text, image_dir, multimodal)
-                cached_pages[str(page_num)] = {"content": content}
+                for i, chunk in enumerate(page_chunks):
+                    page_num = uncached[i] if i < len(uncached) else chunk.get("metadata", {}).get("page", i + 1)
+                    text = chunk.get("text", "")
+                    content = _parse_page_content(text, image_dir, multimodal)
+                    cached_pages[str(page_num)] = {"content": content}
 
         cache["pages"] = cached_pages
         save_cache(pdf_path, cache)
@@ -281,7 +326,7 @@ def get_pages(pdf_path: str, pages: str, multimodal: bool = True) -> dict:
     }
 
 
-def _convert_all(pdf_path: str, task_id: str, multimodal: bool):
+def _convert_all(pdf_path: str, task_id: str, multimodal: bool, force_ocr: bool = False):
     """Background thread: convert all pages of a PDF and update task progress.
 
     Runs in a daemon thread started by create_task. Each page is converted
@@ -296,33 +341,17 @@ def _convert_all(pdf_path: str, task_id: str, multimodal: bool):
 
     cached_pages = cache.get("pages", {})
 
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        image_dir = os.path.join(tmp_dir, "images")
-        os.makedirs(image_dir, exist_ok=True)
-
+    if force_ocr:
         for page_num in range(1, total_pages + 1):
-            if str(page_num) in cached_pages:
+            if str(page_num) in cached_pages and cached_pages.get(str(page_num), {}).get("force_ocr"):
                 tasks[task_id]["current_page"] = page_num
                 tasks[task_id]["progress_percent"] = int(page_num / total_pages * 100)
                 save_tasks(pdf_path, tasks)
                 continue
 
             try:
-                chunk = pymupdf4llm.to_markdown(
-                    pdf_path,
-                    pages=[page_num - 1],
-                    write_images=True,
-                    image_path=image_dir,
-                    header=False,
-                    footer=False,
-                    use_ocr=False,
-                )
-                if isinstance(chunk, list):
-                    chunk = chunk[0] if chunk else {}
-
-                text = chunk.get("text", "")
-                content = _parse_page_content(text, image_dir, multimodal)
-                cached_pages[str(page_num)] = {"content": content}
+                content = _ocr_page(pdf_path, page_num)
+                cached_pages[str(page_num)] = {"content": content, "force_ocr": True}
             except Exception:
                 cached_pages[str(page_num)] = {"content": [{"type": "text", "data": ""}]}
 
@@ -332,6 +361,43 @@ def _convert_all(pdf_path: str, task_id: str, multimodal: bool):
             tasks[task_id]["current_page"] = page_num
             tasks[task_id]["progress_percent"] = int(page_num / total_pages * 100)
             save_tasks(pdf_path, tasks)
+    else:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            image_dir = os.path.join(tmp_dir, "images")
+            os.makedirs(image_dir, exist_ok=True)
+
+            for page_num in range(1, total_pages + 1):
+                if str(page_num) in cached_pages:
+                    tasks[task_id]["current_page"] = page_num
+                    tasks[task_id]["progress_percent"] = int(page_num / total_pages * 100)
+                    save_tasks(pdf_path, tasks)
+                    continue
+
+                try:
+                    chunk = pymupdf4llm.to_markdown(
+                        pdf_path,
+                        pages=[page_num - 1],
+                        write_images=True,
+                        image_path=image_dir,
+                        header=False,
+                        footer=False,
+                        use_ocr=False,
+                    )
+                    if isinstance(chunk, list):
+                        chunk = chunk[0] if chunk else {}
+
+                    text = chunk.get("text", "")
+                    content = _parse_page_content(text, image_dir, multimodal)
+                    cached_pages[str(page_num)] = {"content": content}
+                except Exception:
+                    cached_pages[str(page_num)] = {"content": [{"type": "text", "data": ""}]}
+
+                cache["pages"] = cached_pages
+                save_cache(pdf_path, cache)
+
+                tasks[task_id]["current_page"] = page_num
+                tasks[task_id]["progress_percent"] = int(page_num / total_pages * 100)
+                save_tasks(pdf_path, tasks)
 
     tasks[task_id]["status"] = "completed"
     tasks[task_id]["progress_percent"] = 100
@@ -339,12 +405,15 @@ def _convert_all(pdf_path: str, task_id: str, multimodal: bool):
 
 
 @mcp.tool()
-def create_task(pdf_path: str, multimodal: bool = True) -> dict:
+def create_task(pdf_path: str, multimodal: bool = True, force_ocr: bool = False) -> dict:
     """Start background full PDF conversion.
 
     Args:
         pdf_path: Path to the PDF file.
         multimodal: If True, include images as base64. If False, run OCR on images.
+        force_ocr: Force OCR on entire page as image. Use when normal conversion
+                   produces garbled text or missing content. Results are cached with
+                   force_ocr flag for this PDF.
 
     Returns:
         {status, task_id, message, total_pages}
@@ -363,12 +432,13 @@ def create_task(pdf_path: str, multimodal: bool = True) -> dict:
         "current_page": 0,
         "total_pages": total_pages,
         "multimodal": multimodal,
+        "force_ocr": force_ocr,
         "start_time": time.strftime("%Y-%m-%dT%H:%M:%S"),
     }
     save_tasks(pdf_path, tasks)
 
     thread = threading.Thread(
-        target=_convert_all, args=(pdf_path, task_id, multimodal), daemon=True
+        target=_convert_all, args=(pdf_path, task_id, multimodal, force_ocr), daemon=True
     )
     thread.start()
 

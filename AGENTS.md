@@ -152,8 +152,8 @@ Example:
 |------|-------------|
 | `version` | Get server version info |
 | `get_toc` | Get table of contents with page ranges |
-| `get_pages` | Convert specific pages to markdown (supports multimodal/OCR) |
-| `create_task` | Start background full PDF conversion (multimodal option) |
+| `get_pages` | Convert specific pages to markdown (supports multimodal/OCR/force_ocr) |
+| `create_task` | Start background full PDF conversion (multimodal/force_ocr option) |
 | `get_status` | Check progress of background conversion task |
 
 ### Architecture
@@ -162,16 +162,17 @@ Example:
 Application Layer (MCP tools)
     ↓ get_toc/get_pages/create_task
 Conversion Layer (pymupdf4llm → markdown + images)
-    ↓
-Cache Layer (JSON: %APPDATA%/carrot-mcp/pdf/<hash>.json)
+    ↓ force_ocr=True
+OCR Layer (pymupdf render → litellm vision API)
     ↓ multimodal=False
-OCR Layer (litellm vision API)
+Cache Layer (JSON: %APPDATA%/carrot-mcp/pdf/<hash>.json)
 ```
 
 - Cache: `%APPDATA%/carrot-mcp/pdf/<md5(pdf_path)>.json`
-- JSON structure: `{name, size, path, total_pages, toc, pages: {page_num: {content: [{type, data/base64/mime}]}}}`
-- Content stored as ordered blocks: `[{type: "text", data: "..."}, {type: "image", base64: "...", mime: "..."}]`
+- JSON structure: `{name, size, path, total_pages, toc, pages: {page_num: {content: [{type, data/base64/mime}], force_ocr: bool}}}`
+- Content stored as ordered blocks: `[{type: "text", data: "..."}, {"type": "image", base64: "...", mime: "..."}]`
 - Images replaced with OCR text when multimodal=False (via `CARROT_MCP_MODEL` env var)
+- When `force_ocr=True`: entire page rendered as 300 DPI PNG, then OCR via vision API, result cached with `force_ocr: true` flag
 - Background conversion via `threading.Thread` with progress tracking in separate `<hash>_tasks.json`
 
 **Environment variables:**
