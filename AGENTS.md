@@ -19,16 +19,16 @@ carrot-mcp/
 │   ├── carrot-mcp-office/      # Office MCP server
 │   │   ├── pyproject.toml
 │   │   └── src/carrot_mcp_office/
-│   ├── carrot-mcp-serial/      # Serial port MCP server
+│   ├── carrot-mcp-io/          # IO MCP server (serial, TCP, UDP)
 │   │   ├── pyproject.toml
-│   │   └── src/carrot_mcp_serial/
+│   │   └── src/carrot_mcp_io/
 │   └── carrot-mcp-nfc/         # NFC reader MCP server
 │       ├── pyproject.toml
 │       └── src/carrot_mcp_nfc/
 └── tests/
     ├── pdf/
     ├── office/
-    ├── serial/
+    ├── io/
     │   ├── test_transport.py
     │   ├── test_channel.py
     │   ├── test_logger.py
@@ -46,10 +46,10 @@ uv sync --all-packages
 uv run pytest
 
 # Run tests for specific server
-uv run pytest tests/serial/ -v
+uv run pytest tests/io/ -v
 
 # Run single test module
-uv run pytest tests/serial/test_channel.py -v
+uv run pytest tests/io/test_channel.py -v
 
 # Run servers
 uv run carrot-mcp pdf
@@ -72,19 +72,19 @@ uv run python -m carrot_mcp_office
 - **Test directories must NOT have `__init__.py`** — it shadows the `serial` package from pyserial
 - 修改代码（函数名、工具名等）后，必须同步更新 `AGENTS.md` 和各包的 `README.md`，并运行 `uv run pytest` 验证
 
-## Serial MCP Server Tools
+## IO MCP Server Tools
 
 | Tool | Description |
 |------|-------------|
 | `version` | Get server version info |
-| `list_ports` | List available serial ports |
-| `open` | Open a serial port (baudrate, parity, timeouts, buffer_size) |
-| `close` | Close a serial port |
+| `list_transports` | List available transport types and serial ports |
+| `open` | Open a connection (serial, tcp, udp) |
+| `close` | Close a connection |
 | `read` | Blocking read from buffer with timeout |
 | `recv` | Non-blocking read from buffer (returns available data) |
 | `write` | Write data (hex or ascii with escape support) |
-| `script` | Execute a sequence of serial operations (write/read/wait/flush) |
-| `history` | Get operation history for a port |
+| `script` | Execute a sequence of I/O operations (write/read/wait/flush) |
+| `history` | Get operation history for a connection |
 
 ### Architecture
 
@@ -93,14 +93,14 @@ Application Layer (MCP tools)
     ↓ read/write (all via Channel buffers)
 Channel Layer (Channel: RX/TX buffers with backpressure, Event-driven wait, observer events)
     ↓ polling via daemon thread (only thread touching hardware)
-Transport Layer (Transport ABC → SerialTransport)
+Transport Layer (Transport ABC → SerialTransport / TcpTransport / UdpTransport)
     ↓ raw I/O
-Hardware Layer (serial.Serial)
+Hardware Layer (serial.Serial / socket)
 ```
 
 **Separation of concerns (low coupling, high cohesion):**
 
-- `transport.py`: `Transport` ABC + `SerialTransport` — pure FIFO interface (read/write/buffer-status/close), context manager support, no wait/blocking semantics
+- `transport.py`: `Transport` ABC + `SerialTransport` + `TcpTransport` + `UdpTransport` — pure FIFO interface (read/write/buffer-status/close), context manager support, no wait/blocking semantics
 - `channel.py`: `Channel` — wraps Transport, provides RX/TX deque buffers with backpressure, independent locks (`_rx_lock` / `_tx_lock`), background polling via daemon thread + `threading.Event`, emits `ChannelEvent` to observers
 - `logger.py`: `HistoryLogger` — external observer, plugs into Channel via `attach()`, records operation history independently
 

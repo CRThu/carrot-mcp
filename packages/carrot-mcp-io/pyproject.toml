@@ -1,7 +1,7 @@
 [project]
-name = "carrot-mcp-serial"
+name = "carrot-mcp-io"
 version = "0.2.0"
-description = "Carrot MCP Serial Server"
+description = "Carrot MCP IO Server - serial, TCP, UDP"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -10,14 +10,14 @@ dependencies = [
 ]
 
 [project.scripts]
-carrot-mcp-serial = "carrot_mcp_serial.server:main"
+carrot-mcp-io = "carrot_mcp_io.server:main"
 
 [project.entry-points."carrot_mcp.servers"]
-serial = "carrot_mcp_serial.server:mcp"
+io = "carrot_mcp_io.server:mcp"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/carrot_mcp_serial"]
+packages = ["src/carrot_mcp_io"]

@@ -1,14 +1,14 @@
-"""Tests for MCP Serial Server tools."""
+"""Tests for MCP IO Server tools."""
 
 import time
 from unittest.mock import MagicMock, patch
 
 import serial
 
-from carrot_mcp_serial.channel import Channel
-from carrot_mcp_serial.transport import SerialTransport
-from carrot_mcp_serial.logger import HistoryLogger
-from carrot_mcp_serial.server import (
+from carrot_mcp_io.channel import Channel
+from carrot_mcp_io.transport import SerialTransport
+from carrot_mcp_io.logger import HistoryLogger
+from carrot_mcp_io.server import (
     _channels,
     _loggers,
     _cleanup_channel,
@@ -18,7 +18,7 @@ from carrot_mcp_serial.server import (
     _get_channel,
     _shutdown_all,
     close,
-    list_ports,
+    list_transports,
     open,
     history,
     read,
@@ -63,7 +63,7 @@ def setup_function():
 def test_version():
     result = version()
     assert result["status"] == "ok"
-    assert result["name"] == "carrot-mcp-serial"
+    assert result["name"] == "carrot-mcp-io"
     assert isinstance(result["version"], str)
 
 
@@ -212,51 +212,48 @@ def test_get_channel_open():
     assert _get_channel("COM1") is ch
 
 
-# --- list_ports ---
+# --- list_transports ---
 
 
-@patch("carrot_mcp_serial.server.serial.tools.list_ports.comports")
-def test_list_ports(mock_comports):
+@patch("carrot_mcp_io.server.serial.tools.list_ports.comports")
+def test_list_transports(mock_comports):
     port1 = MagicMock()
     port1.device = "COM3"
     port1.description = "USB Serial"
     port1.hwid = "USB VID:PID=1234:5678"
     mock_comports.return_value = [port1]
-    result = list_ports()
-    assert len(result) == 1
-    assert result[0]["port"] == "COM3"
-    assert result[0]["description"] == "USB Serial"
+    result = list_transports()
+    assert result["status"] == "ok"
+    assert "serial" in result["transports"]
+    assert "tcp" in result["transports"]
+    assert "udp" in result["transports"]
+    assert len(result["serial_ports"]) == 1
+    assert result["serial_ports"][0]["port"] == "COM3"
 
 
-@patch("carrot_mcp_serial.server.serial.tools.list_ports.comports")
-def test_list_ports_empty(mock_comports):
+@patch("carrot_mcp_io.server.serial.tools.list_ports.comports")
+def test_list_transports_empty(mock_comports):
     mock_comports.return_value = []
-    result = list_ports()
-    assert result == []
+    result = list_transports()
+    assert result["status"] == "ok"
+    assert result["serial_ports"] == []
 
 
-@patch("carrot_mcp_serial.server.serial.tools.list_ports.comports")
-def test_list_ports_error(mock_comports):
-    mock_comports.side_effect = Exception("access denied")
-    result = list_ports()
-    assert isinstance(result, dict)
-    assert result["status"] == "error"
+# --- open (serial) ---
 
 
-# --- open ---
-
-
-@patch("carrot_mcp_serial.server.serial.Serial")
+@patch("carrot_mcp_io.server.serial.Serial")
 def test_open_success(mock_serial_cls):
     mock_serial_cls.return_value = _make_mock_port()
     result = open("COM3")
     assert result["status"] == "ok"
     assert result["port"] == "COM3"
     assert result["baudrate"] == 115200
+    assert result["transport"] == "serial"
     assert "COM3" in _channels
 
 
-@patch("carrot_mcp_serial.server.serial.Serial")
+@patch("carrot_mcp_io.server.serial.Serial")
 def test_open_custom_params(mock_serial_cls):
     mock_serial_cls.return_value = _make_mock_port()
     result = open("COM5", baudrate=9600, parity="E", stopbits=2)
@@ -269,7 +266,7 @@ def test_open_custom_params(mock_serial_cls):
     )
 
 
-@patch("carrot_mcp_serial.server.serial.Serial")
+@patch("carrot_mcp_io.server.serial.Serial")
 def test_open_write_timeout_propagates_to_channel(mock_serial_cls):
     mock_serial_cls.return_value = _make_mock_port()
     open("COM3", write_timeout=2.5)
@@ -277,7 +274,7 @@ def test_open_write_timeout_propagates_to_channel(mock_serial_cls):
     assert ch.write_timeout == 2.5
 
 
-@patch("carrot_mcp_serial.server.serial.Serial")
+@patch("carrot_mcp_io.server.serial.Serial")
 def test_open_read_timeout_propagates_to_channel(mock_serial_cls):
     mock_serial_cls.return_value = _make_mock_port()
     open("COM3", read_timeout=3.0)
@@ -285,7 +282,7 @@ def test_open_read_timeout_propagates_to_channel(mock_serial_cls):
     assert ch.read_timeout == 3.0
 
 
-@patch("carrot_mcp_serial.server.serial.Serial")
+@patch("carrot_mcp_io.server.serial.Serial")
 def test_open_already_open(mock_serial_cls):
     _make_mock_channel("COM3")
     result = open("COM3")
@@ -294,7 +291,7 @@ def test_open_already_open(mock_serial_cls):
     mock_serial_cls.assert_not_called()
 
 
-@patch("carrot_mcp_serial.server.serial.Serial")
+@patch("carrot_mcp_io.server.serial.Serial")
 def test_open_exception(mock_serial_cls):
     mock_serial_cls.side_effect = serial.SerialException("port not found")
     result = open("COM99")
@@ -303,13 +300,84 @@ def test_open_exception(mock_serial_cls):
     assert "COM99" not in _channels
 
 
-@patch("carrot_mcp_serial.server.serial.Serial")
+@patch("carrot_mcp_io.server.serial.Serial")
 def test_open_attaches_logger(mock_serial_cls):
     mock_serial_cls.return_value = _make_mock_port()
     open("COM3")
     ch = _channels["COM3"]
     assert "COM3" in _loggers
     assert len(ch._observers) == 1
+
+
+# --- open (tcp) ---
+
+
+@patch("carrot_mcp_io.server.socket.socket")
+def test_open_tcp_success(mock_socket_cls):
+    mock_sock = MagicMock()
+    mock_socket_cls.return_value = mock_sock
+    result = open("device1", transport="tcp", host="192.168.1.100", net_port=5000)
+    assert result["status"] == "ok"
+    assert result["port"] == "device1"
+    assert result["transport"] == "tcp"
+    assert result["host"] == "192.168.1.100"
+    assert result["net_port"] == 5000
+    assert "device1" in _channels
+    mock_sock.connect.assert_called_once_with(("192.168.1.100", 5000))
+
+
+def test_open_tcp_missing_host():
+    result = open("device1", transport="tcp", net_port=5000)
+    assert result["status"] == "error"
+    assert "host is required" in result["message"]
+
+
+def test_open_tcp_missing_port():
+    result = open("device1", transport="tcp", host="192.168.1.100")
+    assert result["status"] == "error"
+    assert "net_port is required" in result["message"]
+
+
+@patch("carrot_mcp_io.server.socket.socket")
+def test_open_tcp_connection_error(mock_socket_cls):
+    mock_sock = MagicMock()
+    mock_sock.connect.side_effect = OSError("connection refused")
+    mock_socket_cls.return_value = mock_sock
+    result = open("device1", transport="tcp", host="192.168.1.100", net_port=5000)
+    assert result["status"] == "error"
+    assert "connection refused" in result["message"]
+
+
+# --- open (udp) ---
+
+
+@patch("carrot_mcp_io.server.socket.socket")
+def test_open_udp_success(mock_socket_cls):
+    mock_sock = MagicMock()
+    mock_socket_cls.return_value = mock_sock
+    result = open("device1", transport="udp", host="192.168.1.100", net_port=5000)
+    assert result["status"] == "ok"
+    assert result["port"] == "device1"
+    assert result["transport"] == "udp"
+    assert "device1" in _channels
+
+
+def test_open_udp_missing_host():
+    result = open("device1", transport="udp", net_port=5000)
+    assert result["status"] == "error"
+    assert "host is required" in result["message"]
+
+
+def test_open_udp_missing_port():
+    result = open("device1", transport="udp", host="192.168.1.100")
+    assert result["status"] == "error"
+    assert "net_port is required" in result["message"]
+
+
+def test_open_invalid_transport():
+    result = open("device1", transport="invalid")
+    assert result["status"] == "error"
+    assert "Unknown transport" in result["message"]
 
 
 # --- close ---
@@ -509,7 +577,7 @@ def test_write_not_open():
 
 def test_write_timeout():
     ch = _make_mock_channel("COM3")
-    ch._transport._ser.write.side_effect = serial.SerialTimeoutException("timeout")
+    ch._transport._ser.write.side_effect = TimeoutError("timeout")
     result = write("COM3", hex="41")
     assert result["status"] == "error"
     assert "timed out" in result["message"]
@@ -517,7 +585,7 @@ def test_write_timeout():
 
 def test_write_exception():
     ch = _make_mock_channel("COM3")
-    ch._transport._ser.write.side_effect = serial.SerialException("write failed")
+    ch._transport._ser.write.side_effect = Exception("write failed")
     result = write("COM3", hex="41")
     assert result["status"] == "error"
     assert "COM3" not in _channels
@@ -635,7 +703,7 @@ def test_script_multi_steps():
 
 def test_script_exception_stops():
     ch = _make_mock_channel("COM3")
-    ch._transport._ser.write.side_effect = serial.SerialException("write failed")
+    ch._transport._ser.write.side_effect = Exception("write failed")
     steps = [
         {"op": "write", "data": "AA"},
         {"op": "wait", "ms": 10},

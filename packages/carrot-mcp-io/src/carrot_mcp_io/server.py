@@ -1,7 +1,8 @@
-"""Carrot MCP Serial Server - pyserial wrapper"""
+"""Carrot MCP IO Server - serial, TCP, UDP transport wrapper"""
 
 import atexit
 import codecs
+import socket
 import sys
 import time
 import warnings
@@ -14,9 +15,9 @@ from mcp.server.fastmcp import FastMCP
 
 from .channel import Channel
 from .logger import HistoryLogger
-from .transport import SerialTransport
+from .transport import SerialTransport, TcpTransport, UdpTransport
 
-mcp = FastMCP("carrot-mcp-serial")
+mcp = FastMCP("carrot-mcp-io")
 
 _channels: dict[str, Channel] = {}
 _loggers: dict[str, HistoryLogger] = {}
@@ -40,10 +41,10 @@ def _format_result(data: bytes, fmt: str) -> dict:
     return {"length": len(data), "data": _encode(data, fmt)}
 
 
-def _cleanup_channel(port: str) -> None:
+def _cleanup_channel(key: str) -> None:
     """Close channel + remove from registry. Safe to call multiple times."""
-    ch = _channels.pop(port, None)
-    _loggers.pop(port, None)
+    ch = _channels.pop(key, None)
+    _loggers.pop(key, None)
     if ch is not None:
         try:
             ch.close()
@@ -51,12 +52,12 @@ def _cleanup_channel(port: str) -> None:
             pass
 
 
-def _get_channel(port: str) -> Channel | None:
-    ch = _channels.get(port)
+def _get_channel(key: str) -> Channel | None:
+    ch = _channels.get(key)
     if ch is None:
         return None
     if not ch.is_open:
-        _cleanup_channel(port)
+        _cleanup_channel(key)
         return None
     return ch
 
@@ -70,35 +71,44 @@ def version() -> dict:
     """
     return {
         "status": "ok",
-        "name": "carrot-mcp-serial",
-        "version": pkg_version("carrot-mcp-serial"),
+        "name": "carrot-mcp-io",
+        "version": pkg_version("carrot-mcp-io"),
     }
 
 
 @mcp.tool()
-def list_ports() -> list[dict[str, str]] | dict[str, str]:
-    """List available serial ports.
+def list_transports() -> dict:
+    """List available transport types and serial ports.
 
     Returns:
-        List of {port, description, hwid} or {status, message} on error
+        {status, transports: [serial, tcp, udp], serial_ports: [...]}
     """
+    result: dict[str, Any] = {
+        "status": "ok",
+        "transports": ["serial", "tcp", "udp"],
+        "serial_ports": [],
+    }
     try:
         ports = serial.tools.list_ports.comports()
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
-    return [
-        {
-            "port": p.device,
-            "description": p.description,
-            "hwid": p.hwid,
-        }
-        for p in ports
-    ]
+        result["serial_ports"] = [
+            {
+                "port": p.device,
+                "description": p.description,
+                "hwid": p.hwid,
+            }
+            for p in ports
+        ]
+    except Exception:
+        pass
+    return result
 
 
 @mcp.tool()
 def open(
     port: str,
+    transport: str = "serial",
+    host: str = "",
+    net_port: int = 0,
     baudrate: int = 115200,
     bytesize: int = 8,
     parity: str = "N",
@@ -107,25 +117,43 @@ def open(
     write_timeout: float = 1.0,
     buffer_size: int = 1048576,
 ) -> dict:
-    """Open a serial port connection.
+    """Open a connection.
 
     Args:
-        port: Serial port name (e.g. COM3, /dev/ttyUSB0)
-        baudrate: Baud rate (default 115200)
-        bytesize: Data bits (5, 6, 7, or 8)
-        parity: Parity (N, E, O, M, S)
-        stopbits: Stop bits (1, 1.5, or 2)
+        port: Connection identifier. For serial: port name (e.g. COM3). For tcp/udp: a label (e.g. "mydevice")
+        transport: Transport type - "serial", "tcp", or "udp" (default "serial")
+        host: Remote host for tcp/udp (e.g. "192.168.1.100")
+        net_port: Remote port for tcp/udp (e.g. 5000)
+        baudrate: Baud rate for serial (default 115200)
+        bytesize: Data bits for serial (5, 6, 7, or 8)
+        parity: Parity for serial (N, E, O, M, S)
+        stopbits: Stop bits for serial (1, 1.5, or 2)
         read_timeout: Read timeout in seconds
         write_timeout: Write timeout in seconds
         buffer_size: RX/TX buffer size in bytes (default 1MB)
 
     Returns:
-        {status, port, baudrate} or {status, message} on error
+        {status, port, transport} or {status, message} on error
     """
+    if transport not in ("serial", "tcp", "udp"):
+        return {"status": "error", "message": f"Unknown transport: {transport}"}
+
     existing = _get_channel(port)
     if existing:
         return {"status": "ok", "message": f"{port} is already open"}
 
+    if transport == "serial":
+        return _open_serial(port, baudrate, bytesize, parity, stopbits,
+                            read_timeout, write_timeout, buffer_size)
+    elif transport == "tcp":
+        return _open_tcp(port, host, net_port, read_timeout, write_timeout, buffer_size)
+    elif transport == "udp":
+        return _open_udp(port, host, net_port, read_timeout, write_timeout, buffer_size)
+    return {"status": "error", "message": "unreachable"}
+
+
+def _open_serial(port, baudrate, bytesize, parity, stopbits,
+                 read_timeout, write_timeout, buffer_size) -> dict:
     try:
         ser = serial.Serial(
             port=port,
@@ -157,15 +185,88 @@ def open(
         _channels[port] = ch
         _loggers[port] = logger
 
-        return {"status": "ok", "port": port, "baudrate": baudrate}
+        return {"status": "ok", "port": port, "transport": "serial", "baudrate": baudrate}
     except Exception:
         ser.close()
         return {"status": "error", "message": f"Failed to initialize channel for {port}"}
 
 
+def _open_tcp(port, host, net_port, read_timeout, write_timeout, buffer_size) -> dict:
+    if not host:
+        return {"status": "error", "message": "host is required for tcp transport"}
+    if not net_port:
+        return {"status": "error", "message": "net_port is required for tcp transport"}
+
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(read_timeout)
+        sock.connect((host, net_port))
+    except (socket.error, OSError) as e:
+        return {"status": "error", "message": str(e)}
+
+    try:
+        transport = TcpTransport(sock)
+        transport.timeout = read_timeout
+        ch = Channel(
+            transport,
+            rx_maxlen=buffer_size,
+            tx_maxlen=buffer_size,
+            read_timeout=read_timeout,
+            write_timeout=write_timeout,
+        )
+
+        logger = HistoryLogger(max_entries=100)
+        ch.attach(logger.on_event)
+
+        ch.start()
+        _channels[port] = ch
+        _loggers[port] = logger
+
+        return {"status": "ok", "port": port, "transport": "tcp", "host": host, "net_port": net_port}
+    except Exception:
+        sock.close()
+        return {"status": "error", "message": f"Failed to initialize channel for {port}"}
+
+
+def _open_udp(port, host, net_port, read_timeout, write_timeout, buffer_size) -> dict:
+    if not host:
+        return {"status": "error", "message": "host is required for udp transport"}
+    if not net_port:
+        return {"status": "error", "message": "net_port is required for udp transport"}
+
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.settimeout(read_timeout)
+    except (socket.error, OSError) as e:
+        return {"status": "error", "message": str(e)}
+
+    try:
+        transport = UdpTransport(sock, (host, net_port))
+        transport.timeout = read_timeout
+        ch = Channel(
+            transport,
+            rx_maxlen=buffer_size,
+            tx_maxlen=buffer_size,
+            read_timeout=read_timeout,
+            write_timeout=write_timeout,
+        )
+
+        logger = HistoryLogger(max_entries=100)
+        ch.attach(logger.on_event)
+
+        ch.start()
+        _channels[port] = ch
+        _loggers[port] = logger
+
+        return {"status": "ok", "port": port, "transport": "udp", "host": host, "net_port": net_port}
+    except Exception:
+        sock.close()
+        return {"status": "error", "message": f"Failed to initialize channel for {port}"}
+
+
 @mcp.tool()
 def close(port: str) -> dict:
-    """Close a serial port connection.
+    """Close a connection.
 
     Returns:
         {status, port}
@@ -186,7 +287,7 @@ def read(port: str, size: int = 256, fmt: str = "hex", timeout: Optional[float] 
     """Read data from buffer. If buffer empty, blocks until data available or timeout.
 
     Args:
-        port: Serial port name
+        port: Connection identifier
         size: Max bytes to read (default 256)
         fmt: Output format - "hex" or "ascii" (default "hex")
         timeout: Override read timeout in seconds (optional, None=use port timeout)
@@ -209,7 +310,7 @@ def read(port: str, size: int = 256, fmt: str = "hex", timeout: Optional[float] 
         result = _format_result(data, fmt)
         result["status"] = "ok"
         return result
-    except serial.SerialException as e:
+    except Exception as e:
         _cleanup_channel(port)
         return {"status": "error", "message": str(e)}
 
@@ -219,7 +320,7 @@ def recv(port: str, size: Optional[int] = None, fmt: str = "hex") -> dict:
     """Non-blocking read. Returns whatever is available in the buffer.
 
     Args:
-        port: Serial port name
+        port: Connection identifier
         size: Max bytes to read (default: all available)
         fmt: Output format - "hex" or "ascii" (default "hex")
 
@@ -239,17 +340,17 @@ def recv(port: str, size: Optional[int] = None, fmt: str = "hex") -> dict:
         result = _format_result(data, fmt)
         result["status"] = "ok"
         return result
-    except serial.SerialException as e:
+    except Exception as e:
         _cleanup_channel(port)
         return {"status": "error", "message": str(e)}
 
 
 @mcp.tool()
 def write(port: str, hex: Optional[str] = None, ascii: Optional[str] = None) -> dict:
-    """Write data to an open serial port. Provide hex or ascii.
+    """Write data to an open connection. Provide hex or ascii.
 
     Args:
-        port: Serial port name
+        port: Connection identifier
         hex: Hex string, e.g. "48656C6C6F"
         ascii: ASCII string with escape support, e.g. "Hello\\nWorld", "\\x00\\x01"
 
@@ -279,19 +380,19 @@ def write(port: str, hex: Optional[str] = None, ascii: Optional[str] = None) -> 
     try:
         written = ch.write(raw)
         return {"status": "ok", "bytes_written": written}
-    except serial.SerialTimeoutException:
+    except TimeoutError:
         return {"status": "error", "message": "Write timed out"}
-    except serial.SerialException as e:
+    except Exception as e:
         _cleanup_channel(port)
         return {"status": "error", "message": str(e)}
 
 
 @mcp.tool()
 def history(port: str, limit: int = 50) -> dict:
-    """Get operation history for a serial port.
+    """Get operation history for a connection.
 
     Args:
-        port: Serial port name
+        port: Connection identifier
         limit: Max entries to return (default 50)
 
     Returns:
@@ -351,10 +452,10 @@ def _exec_step(ch: Channel, step: dict, fmt: str) -> dict:
 
 @mcp.tool()
 def script(port: str, steps: list[dict[str, Any]], fmt: str = "hex") -> list[dict]:
-    """Execute a sequence of serial operations.
+    """Execute a sequence of I/O operations.
 
     Args:
-        port: Serial port name
+        port: Connection identifier
         steps: List of operations. Each step is a dict with 'op' field:
             - write: {"op": "write", "data": "<hex|ascii>"}
             - read:  {"op": "read", "size"?: int, "timeout"?: float, "expect"?: "<hex|ascii>", "on_mismatch"?: "stop"|"continue"}
@@ -385,7 +486,7 @@ def script(port: str, steps: list[dict[str, Any]], fmt: str = "hex") -> list[dic
             results.append(result)
             if result.get("status") == "error":
                 break
-        except serial.SerialException as e:
+        except Exception as e:
             _cleanup_channel(port)
             results.append({"op": step.get("op"), "step": i, "status": "error", "message": str(e)})
             break
@@ -400,7 +501,7 @@ def _shutdown_all() -> None:
 
 def main():
     atexit.register(_shutdown_all)
-    print("carrot-mcp-serial server ready", file=sys.stderr)
+    print("carrot-mcp-io server ready", file=sys.stderr)
     mcp.run()
 
 

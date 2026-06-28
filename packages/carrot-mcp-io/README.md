@@ -1,40 +1,77 @@
-# carrot-mcp-serial
+# carrot-mcp-io
 
-Carrot MCP Serial Server - pyserial wrapper for serial port communication.
+Carrot MCP IO Server - serial, TCP, UDP transport wrapper for hardware and network communication.
 
 ## Tools
 
 | Tool | Description |
 |------|-------------|
 | `version` | Get server version info |
-| `list_ports` | List available serial ports |
-| `open` | Open a serial port connection (baudrate, parity, timeouts, buffer_size) |
-| `close` | Close a serial port connection |
+| `list_transports` | List available transport types and serial ports |
+| `open` | Open a connection (serial, tcp, udp) |
+| `close` | Close a connection |
 | `read` | Blocking read with timeout |
 | `recv` | Non-blocking read from buffer |
 | `write` | Buffered write (hex or ascii with escape support) |
-| `script` | Execute a sequence of serial operations (write/read/wait/flush) |
-| `history` | Get operation history for a port |
+| `script` | Execute a sequence of I/O operations (write/read/wait/flush) |
+| `history` | Get operation history for a connection |
+
+## Transports
+
+### Serial
+```json
+{
+  "open": {
+    "port": "COM3",
+    "transport": "serial",
+    "baudrate": 115200
+  }
+}
+```
+
+### TCP
+```json
+{
+  "open": {
+    "port": "mydevice",
+    "transport": "tcp",
+    "host": "192.168.1.100",
+    "net_port": 5000
+  }
+}
+```
+
+### UDP
+```json
+{
+  "open": {
+    "port": "sensor",
+    "transport": "udp",
+    "host": "192.168.1.200",
+    "net_port": 8888
+  }
+}
+```
 
 ## Examples
 
 ```bash
-# List ports
-uvx carrot-mcp-serial@latest
+# List available transports
+uvx carrot-mcp-io@latest
 
 # MCP config
 {
-  "carrot-serial": {
+  "carrot-io": {
     "command": "uvx",
-    "args": ["carrot-mcp-serial@latest"]
+    "args": ["carrot-mcp-io@latest"]
   }
 }
 ```
 
 ## Buffer Behavior (Backpressure)
 
-- **RX buffer**: when full, the poll thread stops reading from hardware. Data stays in the OS serial buffer until the consumer frees space. No data is silently dropped.
-- **TX buffer**: when full, `write()` blocks until the poll thread drains enough space. If `write_timeout` expires (or drain cannot complete due to device issues), a `TimeoutError` is raised. Hardware write failures also raise the original exception (e.g. `SerialException`).
+- **RX buffer**: when full, the poll thread stops reading from hardware/network. Data stays in the OS buffer until the consumer frees space. No data is silently dropped.
+- **TX buffer**: when full, `write()` blocks until the poll thread drains enough space. If `write_timeout` expires, a `TimeoutError` is raised.
 - Buffer size is configurable via the `buffer_size` parameter on `open` (default 1MB).
 
 ## Return Format

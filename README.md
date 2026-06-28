@@ -12,7 +12,7 @@ A collection of MCP (Model Context Protocol) servers for various hardware and da
 pip install carrot-mcp
 ```
 
-This installs all MCP servers (pdf, serial, nfc, office) by default.
+This installs all MCP servers (pdf, io, nfc, office) by default.
 
 ### uv
 
@@ -25,7 +25,7 @@ uv pip install carrot-mcp
 ```bash
 # pip or uv
 pip install carrot-mcp[pdf]
-pip install carrot-mcp[serial]
+pip install carrot-mcp[io]
 pip install carrot-mcp[nfc]
 pip install carrot-mcp[office]
 ```
@@ -34,7 +34,7 @@ pip install carrot-mcp[office]
 
 ```bash
 pip install carrot-mcp-pdf
-pip install carrot-mcp-serial
+pip install carrot-mcp-io
 pip install carrot-mcp-nfc
 pip install carrot-mcp-office
 ```
@@ -46,7 +46,7 @@ pip install carrot-mcp-office
 ```bash
 # Run a specific server directly (no install needed)
 uvx carrot-mcp-pdf@latest
-uvx carrot-mcp-serial@latest
+uvx carrot-mcp-io@latest
 uvx carrot-mcp-nfc@latest
 uvx carrot-mcp-office@latest
 ```
@@ -59,7 +59,7 @@ carrot-mcp list
 
 # Run a specific server
 carrot-mcp pdf
-carrot-mcp serial
+carrot-mcp io
 carrot-mcp nfc
 carrot-mcp office
 
@@ -71,7 +71,7 @@ uv run carrot-mcp office
 
 ```bash
 python -m carrot_mcp_pdf
-python -m carrot_mcp_serial
+python -m carrot_mcp_io
 python -m carrot_mcp_nfc
 python -m carrot_mcp_office
 ```
@@ -82,7 +82,7 @@ python -m carrot_mcp_office
 |--------|---------|----------|-------------|
 | PDF | `carrot-mcp-pdf` | Document | PDF processing |
 | Office | `carrot-mcp-office` | Document | Excel & Word automation with auto-backup |
-| Serial | `carrot-mcp-serial` | Hardware | Serial port communication |
+| IO | `carrot-mcp-io` | Hardware | Serial, TCP, UDP communication |
 | NFC | `carrot-mcp-nfc` | Hardware | NFC reader (PN532, CLRC663) |
 
 ## Document Servers
@@ -146,19 +146,19 @@ Features:
 
 ## Hardware Servers
 
-### Serial MCP Tools
+### IO MCP Tools
 
 | Tool | Description |
 |------|-------------|
 | `version` | Get server version info |
-| `list_ports` | List available serial ports |
-| `open` | Open a serial port (baudrate, parity, timeouts, buffer_size) |
-| `close` | Close a serial port |
+| `list_transports` | List available transport types and serial ports |
+| `open` | Open a connection (serial, tcp, udp) |
+| `close` | Close a connection |
 | `read` | Blocking read from buffer with timeout |
 | `recv` | Non-blocking read from buffer |
 | `write` | Write data (hex or ascii with escape support) |
-| `script` | Execute a sequence of serial operations (write/read/wait/flush) |
-| `history` | Get operation history for a port |
+| `script` | Execute a sequence of I/O operations (write/read/wait/flush) |
+| `history` | Get operation history for a connection |
 
 ### NFC MCP Tools
 
@@ -197,9 +197,9 @@ Add to your MCP client config (e.g., Claude Desktop):
       "command": "uvx",
       "args": ["carrot-mcp-office@latest"]
     },
-    "carrot-serial": {
+    "carrot-io": {
       "command": "uvx",
-      "args": ["carrot-mcp-serial@latest"]
+      "args": ["carrot-mcp-io@latest"]
     },
     "carrot-nfc": {
       "command": "uvx",
@@ -222,7 +222,7 @@ uv run pytest
 
 # Run tests for specific server
 uv run pytest tests/office/ -v
-uv run pytest tests/serial/ -v
+uv run pytest tests/io/ -v
 
 # Bump version and release
 bump.bat                        # interactive

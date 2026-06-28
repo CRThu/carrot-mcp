@@ -6,8 +6,8 @@ from unittest.mock import MagicMock
 
 import serial
 
-from carrot_mcp_serial.channel import Channel, ChannelEvent
-from carrot_mcp_serial.transport import SerialTransport
+from carrot_mcp_io.channel import Channel, ChannelEvent
+from carrot_mcp_io.transport import SerialTransport
 
 
 def _make_mock_ser(**kwargs):

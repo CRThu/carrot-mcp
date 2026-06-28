@@ -1,7 +1,7 @@
 """Tests for HistoryLogger."""
 
-from carrot_mcp_serial.channel import ChannelEvent
-from carrot_mcp_serial.logger import HistoryLogger
+from carrot_mcp_io.channel import ChannelEvent
+from carrot_mcp_io.logger import HistoryLogger
 
 
 def _event(op="recv", data=b"\x01", pending=0):
