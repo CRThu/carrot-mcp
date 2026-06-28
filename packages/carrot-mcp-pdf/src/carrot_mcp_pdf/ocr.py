@@ -2,6 +2,30 @@
 
 import base64
 import os
+import litellm
+
+# OCR_PROMPT = "Extract all text from this image. Output only the raw text, no explanation. Preserve the original layout as closely as possible."
+OCR_PROMPT = """
+请识别并提取这张图片中的所有内容。按以下规则处理：
+
+1. **文字内容**：逐行提取，保留原始排版结构（标题、段落、列表、表格等）
+2. **表格**：转换为 Markdown 表格格式
+3. **嵌入的图表/示意图/流程图**：
+   - 用 `> [图]` 标记开始
+   - **结构化转换**：尽量将图表内容转换为可读格式
+     - 流程图/状态机 → Mermaid 语法
+     - 对比/参数表 → Markdown 表格
+     - 层级关系 → 列表缩进
+   - **核心信息提取**：列出图中的关键要素、数值、标签
+   - **推论分析**：基于图表内容给出合理推断，用 `[推断]` 标记
+   - 用 `> [/图]` 标记结束
+4. **无法识别的内容**：标记为 `[未识别]`
+
+输出要求：
+- 只输出识别到的内容，不要添加额外解释
+- 保持原文的阅读顺序
+- 如果是纯文字页面，直接输出文字即可
+"""
 
 
 def recognize_image(
@@ -23,7 +47,6 @@ def recognize_image(
     Returns:
         Text description of the image content.
     """
-    import litellm
 
     model = model or os.environ.get("CARROT_MCP_MODEL")
     api_key = api_key or os.environ.get("CARROT_MCP_APIKEY")
@@ -46,7 +69,7 @@ def recognize_image(
     if api_key:
         kwargs["api_key"] = api_key
     if proxy:
-        kwargs["api_base"] = proxy
+        kwargs["proxy"] = proxy
 
     response = litellm.completion(
         **kwargs,
@@ -56,7 +79,7 @@ def recognize_image(
                 "content": [
                     {
                         "type": "text",
-                        "text": "Describe this image in detail, including any text, diagrams, tables, or technical content. If it contains text, transcribe it exactly.",
+                        "text": OCR_PROMPT,
                     },
                     {
                         "type": "image_url",

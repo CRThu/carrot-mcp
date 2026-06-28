@@ -436,8 +436,7 @@ def test_recognize_image_calls_litellm(tmp_path):
     img.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 50)
 
     mock_litellm = _make_mock_litellm("A chart showing data")
-    import sys
-    with patch.dict(sys.modules, {"litellm": mock_litellm}):
+    with patch("carrot_mcp_pdf.ocr.litellm", mock_litellm):
         result = recognize_image(str(img), model="test-model", api_key="test-key")
 
     assert result == "A chart showing data"
@@ -449,8 +448,7 @@ def test_recognize_image_none_content(tmp_path):
     img.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 50)
 
     mock_litellm = _make_mock_litellm(content=None)
-    import sys
-    with patch.dict(sys.modules, {"litellm": mock_litellm}):
+    with patch("carrot_mcp_pdf.ocr.litellm", mock_litellm):
         result = recognize_image(str(img))
 
     assert "No response" in result
@@ -465,14 +463,13 @@ def test_recognize_image_env_defaults(monkeypatch, tmp_path):
     monkeypatch.setenv("CARROT_MCP_PROXY", "http://proxy")
 
     mock_litellm = _make_mock_litellm("ok")
-    import sys
-    with patch.dict(sys.modules, {"litellm": mock_litellm}):
+    with patch("carrot_mcp_pdf.ocr.litellm", mock_litellm):
         recognize_image(str(img))
 
     call_kwargs = mock_litellm.completion.call_args[1]
     assert call_kwargs["model"] == "env-model"
     assert call_kwargs["api_key"] == "env-key"
-    assert call_kwargs["api_base"] == "http://proxy"
+    assert call_kwargs["proxy"] == "http://proxy"
 
 
 # ── _resolve_multimodal ─────────────────────────────────────────────────────
