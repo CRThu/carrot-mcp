@@ -10,6 +10,10 @@ Carrot MCP Office Server — Excel and Word automation via MCP.
 
 ## Tools
 
+| Tool | Description |
+|------|-------------|
+| `version` | Get server version info and backup configuration |
+
 ### Excel Tools
 
 | Tool | Description |

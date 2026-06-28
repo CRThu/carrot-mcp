@@ -111,13 +111,13 @@ def get_pages(pdf_path: str, pages: str, multimodal: bool = True, force_ocr: boo
         pdf_path: Path to the PDF file.
         pages: Page range string, e.g. '1-5,8,10-12'.
         multimodal: If True, return images as base64 that you can analyze.
-                    If False, send images to internal vlm for OCR and return contents of images.
-        force_ocr: Force OCR on entire page as image. Use when normal conversion
-                   produces garbled text or missing content. Results are cached with
-                   force_ocr flag for this PDF.
+                    If False, return OCR text of images.
+        force_ocr: Render entire page as image and OCR it. Use when normal conversion
+                   produces garbled text or missing content (e.g. scanned PDFs).
+                   Sets PDF-level flag so future requests also use OCR.
 
     Returns:
-        {status, pages: {page_num: {content: [{type, data/base64/mime}], force_ocr: bool}}, total_pages}
+        {status, pages: {page_num: {content: [...]}}, total_pages}
     """
     if not os.path.exists(pdf_path):
         return {"status": "error", "message": f"File not found: {pdf_path}"}
@@ -137,18 +137,26 @@ def get_pages(pdf_path: str, pages: str, multimodal: bool = True, force_ocr: boo
             "message": f"Pages out of range (total {total_pages}): {out_of_range}",
         }
 
-    cached_pages = cache.get("pages", {})
-
     if force_ocr:
-        uncached = [p for p in page_list if str(p) not in cached_pages or not cached_pages.get(str(p), {}).get("force_ocr")]
-    else:
-        uncached = [p for p in page_list if str(p) not in cached_pages]
+        if not cache.get("force_ocr"):
+            cache["pages"] = {}
+        cache["force_ocr"] = True
+        save_cache(pdf_path, cache)
+
+    cached_pages = cache.get("pages", {})
+    uncached = [p for p in page_list if str(p) not in cached_pages]
 
     if uncached:
         if force_ocr:
             for page_num in uncached:
-                content = ocr_page(pdf_path, page_num)
-                cached_pages[str(page_num)] = {"content": content, "force_ocr": True}
+                try:
+                    content = ocr_page(pdf_path, page_num)
+                    cached_pages[str(page_num)] = {
+                        "content": content,
+                        "ocr_content": content,
+                    }
+                except Exception:
+                    pass
         else:
             with tempfile.TemporaryDirectory() as tmp_dir:
                 image_dir = os.path.join(tmp_dir, "images")
@@ -173,17 +181,24 @@ def get_pages(pdf_path: str, pages: str, multimodal: bool = True, force_ocr: boo
                 for i, chunk in enumerate(page_chunks):
                     page_num = uncached[i] if i < len(uncached) else chunk.get("metadata", {}).get("page", i + 1)
                     text = chunk.get("text", "")
-                    content = parse_page_content(text, image_dir, multimodal)
-                    cached_pages[str(page_num)] = {"content": content}
+                    content, ocr_content = parse_page_content(text, image_dir)
+                    cached_pages[str(page_num)] = {
+                        "content": content,
+                        "ocr_content": ocr_content,
+                    }
 
         cache["pages"] = cached_pages
         save_cache(pdf_path, cache)
 
+    use_ocr = not multimodal or cache.get("force_ocr")
     result_pages = {}
     for p in page_list:
         page_data = cached_pages.get(str(p))
         if page_data:
-            result_pages[str(p)] = page_data
+            if use_ocr and "ocr_content" in page_data:
+                result_pages[str(p)] = {"content": page_data["ocr_content"]}
+            else:
+                result_pages[str(p)] = {"content": page_data["content"]}
 
     return {
         "status": "ok",
@@ -196,10 +211,16 @@ def _convert_all(pdf_path: str, task_id: str, multimodal: bool, force_ocr: bool 
     """Background thread: convert all pages of a PDF and update task progress.
 
     Runs in a daemon thread started by create_task. Each page is converted
-    individually and cached to disk as it completes. Failed pages get empty content.
+    individually and cached to disk as it completes. Failed pages are not cached.
     """
     cache = load_cache(pdf_path)
     total_pages = get_total_pages(pdf_path, cache)
+
+    if force_ocr:
+        if not cache.get("force_ocr"):
+            cache["pages"] = {}
+        cache["force_ocr"] = True
+        save_cache(pdf_path, cache)
 
     tasks = load_tasks(pdf_path)
     if task_id not in tasks:
@@ -207,39 +228,25 @@ def _convert_all(pdf_path: str, task_id: str, multimodal: bool, force_ocr: bool 
 
     cached_pages = cache.get("pages", {})
 
-    if force_ocr:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        image_dir = os.path.join(tmp_dir, "images")
+        os.makedirs(image_dir, exist_ok=True)
+
         for page_num in range(1, total_pages + 1):
-            if str(page_num) in cached_pages and cached_pages.get(str(page_num), {}).get("force_ocr"):
+            if str(page_num) in cached_pages:
                 tasks[task_id]["current_page"] = page_num
                 tasks[task_id]["progress_percent"] = int(page_num / total_pages * 100)
                 save_tasks(pdf_path, tasks)
                 continue
 
             try:
-                content = ocr_page(pdf_path, page_num)
-                cached_pages[str(page_num)] = {"content": content, "force_ocr": True}
-            except Exception:
-                cached_pages[str(page_num)] = {"content": [{"type": "text", "data": ""}]}
-
-            cache["pages"] = cached_pages
-            save_cache(pdf_path, cache)
-
-            tasks[task_id]["current_page"] = page_num
-            tasks[task_id]["progress_percent"] = int(page_num / total_pages * 100)
-            save_tasks(pdf_path, tasks)
-    else:
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            image_dir = os.path.join(tmp_dir, "images")
-            os.makedirs(image_dir, exist_ok=True)
-
-            for page_num in range(1, total_pages + 1):
-                if str(page_num) in cached_pages:
-                    tasks[task_id]["current_page"] = page_num
-                    tasks[task_id]["progress_percent"] = int(page_num / total_pages * 100)
-                    save_tasks(pdf_path, tasks)
-                    continue
-
-                try:
+                if force_ocr:
+                    content = ocr_page(pdf_path, page_num)
+                    cached_pages[str(page_num)] = {
+                        "content": content,
+                        "ocr_content": content,
+                    }
+                else:
                     chunk = pymupdf4llm.to_markdown(
                         pdf_path,
                         pages=[page_num - 1],
@@ -251,19 +258,21 @@ def _convert_all(pdf_path: str, task_id: str, multimodal: bool, force_ocr: bool 
                     )
                     if isinstance(chunk, list):
                         chunk = chunk[0] if chunk else {}
-
                     text = chunk.get("text", "")
-                    content = parse_page_content(text, image_dir, multimodal)
-                    cached_pages[str(page_num)] = {"content": content}
-                except Exception:
-                    cached_pages[str(page_num)] = {"content": [{"type": "text", "data": ""}]}
+                    content, ocr_content = parse_page_content(text, image_dir)
+                    cached_pages[str(page_num)] = {
+                        "content": content,
+                        "ocr_content": ocr_content,
+                    }
 
                 cache["pages"] = cached_pages
                 save_cache(pdf_path, cache)
+            except Exception:
+                pass
 
-                tasks[task_id]["current_page"] = page_num
-                tasks[task_id]["progress_percent"] = int(page_num / total_pages * 100)
-                save_tasks(pdf_path, tasks)
+            tasks[task_id]["current_page"] = page_num
+            tasks[task_id]["progress_percent"] = int(page_num / total_pages * 100)
+            save_tasks(pdf_path, tasks)
 
     tasks[task_id]["status"] = "completed"
     tasks[task_id]["progress_percent"] = 100
@@ -277,9 +286,9 @@ def create_task(pdf_path: str, multimodal: bool = True, force_ocr: bool = False)
     Args:
         pdf_path: Path to the PDF file.
         multimodal: If True, include images as base64. If False, run OCR on images.
-        force_ocr: Force OCR on entire page as image. Use when normal conversion
-                   produces garbled text or missing content. Results are cached with
-                   force_ocr flag for this PDF.
+        force_ocr: Render entire page as image and OCR it. Use when normal conversion
+                   produces garbled text or missing content (e.g. scanned PDFs).
+                   Sets PDF-level flag so future requests also use OCR.
 
     Returns:
         {status, task_id, message, total_pages}

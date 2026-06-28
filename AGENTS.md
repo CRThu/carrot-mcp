@@ -174,10 +174,12 @@ Cache Layer (cache.py — JSON: %APPDATA%/carrot-mcp/pdf/<hash>.json)
 - **cache.py** — Cache/task persistence, path management, parse_page_range
 
 - Cache: `%APPDATA%/carrot-mcp/pdf/<md5(pdf_path)>.json`
-- JSON structure: `{name, size, path, total_pages, toc, pages: {page_num: {content: [{type, data/base64/mime}], force_ocr: bool}}}`
+- JSON structure: `{name, size, path, total_pages, force_ocr, toc, pages: {page_num: {content: [...], ocr_content: [...]}}}`
 - Content stored as ordered blocks: `[{type: "text", data: "..."}, {"type": "image", base64: "...", mime: "..."}]`
-- Images replaced with OCR text when multimodal=False (via `CARROT_MCP_MODEL` env var)
-- When `force_ocr=True`: entire page rendered as 300 DPI PNG, then OCR via vision API, result cached with `force_ocr: true` flag
+- Each page caches **both** formats: `content` (base64 images) and `ocr_content` (OCR text)
+- `multimodal=True` returns `content`, `multimodal=False` returns `ocr_content`
+- `force_ocr` is PDF-level flag (not per-page) — if a few pages are wrong, the whole PDF is likely wrong
+- When `force_ocr=True`: renders entire page as PNG image, calls OCR API, caches result; future requests also use OCR
 - Background conversion via `threading.Thread` with progress tracking in separate `<hash>_tasks.json`
 
 **Environment variables:**

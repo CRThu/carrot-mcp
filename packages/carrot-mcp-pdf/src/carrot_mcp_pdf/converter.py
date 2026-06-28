@@ -61,7 +61,11 @@ def render_page_as_image(pdf_path: str, page_num: int, dpi: int = 300) -> str:
 
 
 def ocr_page(pdf_path: str, page_num: int) -> list[dict]:
-    """Force OCR on a PDF page by rendering it as an image."""
+    """Force OCR on a PDF page by rendering it as an image.
+
+    Renders the entire page as a PNG image and sends it to the vision model for OCR.
+    Returns a list containing a single text block with the OCR result.
+    """
     if not vlm_configured():
         return [{"type": "text", "data": "[VLM model not configured, cannot force OCR]"}]
 
@@ -74,22 +78,23 @@ def ocr_page(pdf_path: str, page_num: int) -> list[dict]:
             proxy=VISION_PROXY,
         )
         return [{"type": "text", "data": ocr_result}]
-    except Exception:
-        return [{"type": "text", "data": "[Force OCR failed]"}]
+    except Exception as e:
+        raise RuntimeError(f"OCR failed: {e}") from e
     finally:
         os.unlink(image_path)
 
 
-def parse_page_content(text: str, image_dir: str, multimodal: bool) -> list[dict]:
+def parse_page_content(text: str, image_dir: str) -> tuple[list[dict], list[dict]]:
     """Parse pymupdf4llm markdown output into ordered content blocks.
 
-    Splits text by image references. Each image is either embedded as base64
-    (multimodal=True) or sent to the vision model for OCR (multimodal=False).
-    When VLM is not configured (no API key), falls back to base64 with a warning.
-    data: URI images are skipped (already inline). Page numbers are 1-based.
+    Returns tuple of (content, ocr_content):
+    - content: blocks with images as base64 (for multimodal=True)
+    - ocr_content: blocks with images replaced by OCR text (for multimodal=False)
+
+    data: URI images are skipped (already inline).
     """
-    multimodal = resolve_multimodal(multimodal)
-    blocks = []
+    content = []
+    ocr_content = []
     last_end = 0
 
     for match in _IMG_PATTERN.finditer(text):
@@ -97,7 +102,8 @@ def parse_page_content(text: str, image_dir: str, multimodal: bool) -> list[dict
 
         text_before = text[last_end:match.start()].strip()
         if text_before:
-            blocks.append({"type": "text", "data": text_before})
+            content.append({"type": "text", "data": text_before})
+            ocr_content.append({"type": "text", "data": text_before})
 
         last_end = match.end()
 
@@ -106,10 +112,10 @@ def parse_page_content(text: str, image_dir: str, multimodal: bool) -> list[dict
 
         img_path = os.path.join(image_dir, os.path.basename(img_ref))
         if os.path.exists(img_path):
-            if multimodal:
-                data_uri, mime = read_image_as_base64(img_path)
-                blocks.append({"type": "image", "base64": data_uri, "mime": mime})
-            elif vlm_configured():
+            data_uri, mime = read_image_as_base64(img_path)
+            content.append({"type": "image", "base64": data_uri, "mime": mime})
+
+            if vlm_configured():
                 try:
                     ocr_result = recognize_image(
                         img_path,
@@ -117,19 +123,19 @@ def parse_page_content(text: str, image_dir: str, multimodal: bool) -> list[dict
                         api_key=VISION_API_KEY,
                         proxy=VISION_PROXY,
                     )
-                except Exception:
-                    ocr_result = "[Image recognition failed]"
-                blocks.append({"type": "text", "data": ocr_result})
+                except Exception as e:
+                    raise RuntimeError(f"Image OCR failed: {e}") from e
+                ocr_content.append({"type": "text", "data": ocr_result})
             else:
-                data_uri, mime = read_image_as_base64(img_path)
-                blocks.append({"type": "image", "base64": data_uri, "mime": mime})
-                blocks.append({"type": "text", "data": "[VLM model not configured, returning image as base64]"})
+                ocr_content.append({"type": "image", "base64": data_uri, "mime": mime})
+                ocr_content.append({"type": "text", "data": "[VLM model not configured, returning image as base64]"})
 
     remaining = text[last_end:].strip()
     if remaining:
-        blocks.append({"type": "text", "data": remaining})
+        content.append({"type": "text", "data": remaining})
+        ocr_content.append({"type": "text", "data": remaining})
 
-    return blocks
+    return content, ocr_content
 
 
 def get_total_pages(pdf_path: str, cache: dict) -> int:

@@ -92,8 +92,16 @@ python -m carrot_mcp_office
 | Tool | Description |
 |------|-------------|
 | `version` | Get server version info |
+| `get_toc` | Get table of contents with page ranges |
+| `get_pages` | Convert specific pages to markdown (supports multimodal/OCR/force_ocr) |
+| `create_task` | Start background full PDF conversion (multimodal/force_ocr option) |
+| `get_status` | Check progress of background conversion task |
 
 ### Office MCP Tools
+
+| Tool | Description |
+|------|-------------|
+| `version` | Get server version info and backup configuration |
 
 #### Excel Tools
 
@@ -221,8 +229,10 @@ uv sync --all-packages
 uv run pytest
 
 # Run tests for specific server
+uv run pytest tests/pdf/ -v
 uv run pytest tests/office/ -v
 uv run pytest tests/io/ -v
+uv run pytest tests/nfc/ -v
 
 # Bump version and release
 bump.bat                        # interactive
