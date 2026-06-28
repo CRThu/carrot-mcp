@@ -1,7 +1,6 @@
 """Carrot MCP PDF Server"""
 
 import base64
-import glob
 import json
 import os
 import re
@@ -36,14 +35,26 @@ _MIME_MAP = {
     ".webp": "image/webp",
 }
 
-# Environment variables
-VISION_MODEL = os.environ.get("CARROT_MCP_MODEL", "openai/gpt-4o")
+VISION_MODEL = os.environ.get("CARROT_MCP_MODEL")
 VISION_API_KEY = os.environ.get("CARROT_MCP_APIKEY")
 VISION_PROXY = os.environ.get("CARROT_MCP_PROXY")
+_MULTIMODAL_ENV = os.environ.get("CARROT_MCP_FORCE_MULTIMODAL")
+
+
+def _resolve_multimodal(multimodal: bool) -> bool:
+    """Resolve multimodal flag: CARROT_MCP_FORCE_MULTIMODAL overrides tool parameter if set."""
+    if _MULTIMODAL_ENV is not None:
+        return _MULTIMODAL_ENV.lower() == "true"
+    return multimodal
+
+
+def _vlm_configured() -> bool:
+    """Check if VLM model and API key are configured for OCR."""
+    return bool(VISION_MODEL and VISION_API_KEY)
 
 
 def _read_image_as_base64(image_path: str) -> tuple[str, str]:
-    """Read image file and return (data_uri, mime)."""
+    """Read an image file and return (data_uri, mime_type) for embedding in markdown."""
     ext = os.path.splitext(image_path)[1].lower()
     mime = _MIME_MAP.get(ext, "image/jpeg")
     with open(image_path, "rb") as f:
@@ -52,36 +63,49 @@ def _read_image_as_base64(image_path: str) -> tuple[str, str]:
 
 
 def _parse_page_content(text: str, image_dir: str, multimodal: bool) -> list[dict]:
-    """Parse markdown text into ordered content blocks [{type, data/base64/mime}].
+    """Parse pymupdf4llm markdown output into ordered content blocks.
 
-    Splits text by image references and interleaves text/image blocks
-    to preserve document flow order.
+    Splits text by image references. Each image is either embedded as base64
+    (multimodal=True) or sent to the vision model for OCR (multimodal=False).
+    When VLM is not configured (no API key), falls back to base64 with a warning.
+    data: URI images are skipped (already inline). Page numbers are 1-based.
     """
+    multimodal = _resolve_multimodal(multimodal)
     blocks = []
     last_end = 0
 
     for match in _IMG_PATTERN.finditer(text):
         img_ref = match.group(1)
-        if img_ref.startswith("data:"):
-            continue
 
         text_before = text[last_end:match.start()].strip()
         if text_before:
             blocks.append({"type": "text", "data": text_before})
+
+        last_end = match.end()
+
+        if img_ref.startswith("data:"):
+            continue
 
         img_path = os.path.join(image_dir, os.path.basename(img_ref))
         if os.path.exists(img_path):
             if multimodal:
                 data_uri, mime = _read_image_as_base64(img_path)
                 blocks.append({"type": "image", "base64": data_uri, "mime": mime})
-            else:
+            elif _vlm_configured():
                 try:
-                    ocr_result = recognize_image(img_path, model=VISION_MODEL, api_key=VISION_API_KEY, proxy=VISION_PROXY)
+                    ocr_result = recognize_image(
+                        img_path,
+                        model=VISION_MODEL,
+                        api_key=VISION_API_KEY,
+                        proxy=VISION_PROXY,
+                    )
                 except Exception:
                     ocr_result = "[Image recognition failed]"
                 blocks.append({"type": "text", "data": ocr_result})
-
-        last_end = match.end()
+            else:
+                data_uri, mime = _read_image_as_base64(img_path)
+                blocks.append({"type": "image", "base64": data_uri, "mime": mime})
+                blocks.append({"type": "text", "data": "[VLM model not configured, returning image as base64]"})
 
     remaining = text[last_end:].strip()
     if remaining:
@@ -91,7 +115,10 @@ def _parse_page_content(text: str, image_dir: str, multimodal: bool) -> list[dic
 
 
 def _get_total_pages(pdf_path: str, cache: dict) -> int:
-    """Get total pages from cache or PDF file."""
+    """Get total page count from cache or by opening the PDF file.
+
+    Updates cache with the result if it was not already cached.
+    """
     total = cache.get("total_pages", 0)
     if not total:
         try:
@@ -107,15 +134,17 @@ def _get_total_pages(pdf_path: str, cache: dict) -> int:
 
 @mcp.tool()
 def version() -> dict:
-    """Get server version info.
+    """Get server version info and VLM configuration status.
 
     Returns:
-        {status, name, version}
+        {status, name, version, vlm_model, vlm_configured}
     """
     return {
         "status": "ok",
         "name": "carrot-mcp-pdf",
         "version": pkg_version("carrot-mcp-pdf"),
+        "vlm_model": VISION_MODEL,
+        "vlm_configured": bool(VISION_MODEL and VISION_API_KEY),
     }
 
 
@@ -127,8 +156,7 @@ def get_toc(pdf_path: str) -> dict:
         pdf_path: Path to the PDF file.
 
     Returns:
-        {status, has_toc, toc: [{level, title, start_page, end_page}]}
-        If no TOC: has_toc=false with message suggesting create_task.
+        {status, has_toc, total_pages, toc: [{level, title, start_page, end_page}]}
     """
     if not os.path.exists(pdf_path):
         return {"status": "error", "message": f"File not found: {pdf_path}"}
@@ -183,8 +211,8 @@ def get_pages(pdf_path: str, pages: str, multimodal: bool = True) -> dict:
     Args:
         pdf_path: Path to the PDF file.
         pages: Page range string, e.g. '1-5,8,10-12'.
-        multimodal: If True, return images as base64 in response.
-                    If False, send images to vision model for OCR, cache results.
+        multimodal: If True, return images as base64 that you can analyze.
+                    If False, send images to internal vlm for OCR and return contents of images.
 
     Returns:
         {status, pages: {page_num: {content: [{type, data/base64/mime}]}}, total_pages}
@@ -199,6 +227,13 @@ def get_pages(pdf_path: str, pages: str, multimodal: bool = True) -> dict:
 
     cache = load_cache(pdf_path)
     total_pages = _get_total_pages(pdf_path, cache)
+
+    out_of_range = [p for p in page_list if p > total_pages]
+    if out_of_range:
+        return {
+            "status": "error",
+            "message": f"Pages out of range (total {total_pages}): {out_of_range}",
+        }
 
     cached_pages = cache.get("pages", {})
     uncached = [p for p in page_list if str(p) not in cached_pages]
@@ -216,6 +251,7 @@ def get_pages(pdf_path: str, pages: str, multimodal: bool = True) -> dict:
                     image_path=image_dir,
                     header=False,
                     footer=False,
+                    use_ocr=False,
                 )
             except Exception as e:
                 return {"status": "error", "message": f"Conversion failed: {e}"}
@@ -245,8 +281,12 @@ def get_pages(pdf_path: str, pages: str, multimodal: bool = True) -> dict:
     }
 
 
-def _convert_all(pdf_path: str, task_id: str):
-    """Background thread: convert all pages and update task progress."""
+def _convert_all(pdf_path: str, task_id: str, multimodal: bool):
+    """Background thread: convert all pages of a PDF and update task progress.
+
+    Runs in a daemon thread started by create_task. Each page is converted
+    individually and cached to disk as it completes. Failed pages get empty content.
+    """
     cache = load_cache(pdf_path)
     total_pages = _get_total_pages(pdf_path, cache)
 
@@ -275,12 +315,13 @@ def _convert_all(pdf_path: str, task_id: str):
                     image_path=image_dir,
                     header=False,
                     footer=False,
+                    use_ocr=False,
                 )
                 if isinstance(chunk, list):
                     chunk = chunk[0] if chunk else {}
 
                 text = chunk.get("text", "")
-                content = _parse_page_content(text, image_dir, multimodal=True)
+                content = _parse_page_content(text, image_dir, multimodal)
                 cached_pages[str(page_num)] = {"content": content}
             except Exception:
                 cached_pages[str(page_num)] = {"content": [{"type": "text", "data": ""}]}
@@ -298,11 +339,12 @@ def _convert_all(pdf_path: str, task_id: str):
 
 
 @mcp.tool()
-def create_task(pdf_path: str) -> dict:
+def create_task(pdf_path: str, multimodal: bool = True) -> dict:
     """Start background full PDF conversion.
 
     Args:
         pdf_path: Path to the PDF file.
+        multimodal: If True, include images as base64. If False, run OCR on images.
 
     Returns:
         {status, task_id, message, total_pages}
@@ -320,11 +362,14 @@ def create_task(pdf_path: str) -> dict:
         "progress_percent": 0,
         "current_page": 0,
         "total_pages": total_pages,
+        "multimodal": multimodal,
         "start_time": time.strftime("%Y-%m-%dT%H:%M:%S"),
     }
     save_tasks(pdf_path, tasks)
 
-    thread = threading.Thread(target=_convert_all, args=(pdf_path, task_id), daemon=True)
+    thread = threading.Thread(
+        target=_convert_all, args=(pdf_path, task_id, multimodal), daemon=True
+    )
     thread.start()
 
     return {
@@ -333,6 +378,24 @@ def create_task(pdf_path: str) -> dict:
         "total_pages": total_pages,
         "message": "Background conversion started",
     }
+
+
+def _find_task_in_files(task_id: str) -> dict | None:
+    """Find a task by scanning task files. Uses task_id prefix for fast lookup."""
+    import glob as glob_mod
+
+    base = os.environ.get("APPDATA", os.path.expanduser("~/.local/share"))
+    pattern = os.path.join(base, "carrot-mcp", "pdf", "*_tasks.json")
+
+    for tasks_path in glob_mod.glob(pattern):
+        try:
+            with open(tasks_path, "r", encoding="utf-8") as f:
+                tasks = json.load(f)
+            if task_id in tasks:
+                return tasks[task_id]
+        except (json.JSONDecodeError, IOError):
+            continue
+    return None
 
 
 @mcp.tool()
@@ -345,28 +408,19 @@ def get_status(task_id: str) -> dict:
     Returns:
         {status, task_id, conversion_status, progress_percent, current_page, total_pages}
     """
-    base = os.environ.get("APPDATA", os.path.expanduser("~/.local/share"))
-    pattern = os.path.join(base, "carrot-mcp", "pdf", "*_tasks.json")
+    task = _find_task_in_files(task_id)
+    if task is None:
+        return {"status": "error", "message": f"Task not found: {task_id}"}
 
-    for tasks_path in glob.glob(pattern):
-        try:
-            with open(tasks_path, "r", encoding="utf-8") as f:
-                tasks = json.load(f)
-            if task_id in tasks:
-                task = tasks[task_id]
-                return {
-                    "status": "ok",
-                    "task_id": task_id,
-                    "conversion_status": task.get("status", "unknown"),
-                    "progress_percent": task.get("progress_percent", 0),
-                    "current_page": task.get("current_page", 0),
-                    "total_pages": task.get("total_pages", 0),
-                    "start_time": task.get("start_time", ""),
-                }
-        except (json.JSONDecodeError, IOError):
-            continue
-
-    return {"status": "error", "message": f"Task not found: {task_id}"}
+    return {
+        "status": "ok",
+        "task_id": task_id,
+        "conversion_status": task.get("status", "unknown"),
+        "progress_percent": task.get("progress_percent", 0),
+        "current_page": task.get("current_page", 0),
+        "total_pages": task.get("total_pages", 0),
+        "start_time": task.get("start_time", ""),
+    }
 
 
 def main():

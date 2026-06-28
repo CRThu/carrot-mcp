@@ -9,21 +9,23 @@ def recognize_image(
     model: str | None = None,
     api_key: str | None = None,
     proxy: str | None = None,
+    timeout: float = 60.0,
 ) -> str:
     """Send image to vision model for OCR/description.
 
     Args:
         image_path: Path to the image file.
-        model: Vision model name (default: CARROT_MCP_MODEL env var or openai/gpt-4o).
+        model: Vision model name (default: CARROT_MCP_MODEL env var).
         api_key: API key (default: CARROT_MCP_APIKEY env var).
         proxy: HTTP proxy URL (default: CARROT_MCP_PROXY env var).
+        timeout: API call timeout in seconds.
 
     Returns:
         Text description of the image content.
     """
     import litellm
 
-    model = model or os.environ.get("CARROT_MCP_MODEL", "openai/gpt-4o")
+    model = model or os.environ.get("CARROT_MCP_MODEL")
     api_key = api_key or os.environ.get("CARROT_MCP_APIKEY")
     proxy = proxy or os.environ.get("CARROT_MCP_PROXY")
 
@@ -31,10 +33,16 @@ def recognize_image(
         image_b64 = base64.b64encode(f.read()).decode()
 
     ext = os.path.splitext(image_path)[1].lower()
-    mime_map = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": "image/gif", ".webp": "image/webp"}
+    mime_map = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".gif": "image/gif",
+        ".webp": "image/webp",
+    }
     mime = mime_map.get(ext, "image/jpeg")
 
-    kwargs = {"model": model}
+    kwargs: dict = {"model": model, "timeout": timeout}
     if api_key:
         kwargs["api_key"] = api_key
     if proxy:
@@ -58,4 +66,5 @@ def recognize_image(
             }
         ],
     )
-    return response.choices[0].message.content
+    content = response.choices[0].message.content
+    return content if content is not None else "[No response from vision model]"

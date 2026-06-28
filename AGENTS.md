@@ -153,7 +153,7 @@ Example:
 | `version` | Get server version info |
 | `get_toc` | Get table of contents with page ranges |
 | `get_pages` | Convert specific pages to markdown (supports multimodal/OCR) |
-| `create_task` | Start background full PDF conversion |
+| `create_task` | Start background full PDF conversion (multimodal option) |
 | `get_status` | Check progress of background conversion task |
 
 ### Architecture
@@ -175,9 +175,10 @@ OCR Layer (litellm vision API)
 - Background conversion via `threading.Thread` with progress tracking in separate `<hash>_tasks.json`
 
 **Environment variables:**
-- `CARROT_MCP_MODEL`: Vision model name (default: `openai/gpt-4o`)
-- `CARROT_MCP_APIKEY`: API key for the vision model
+- `CARROT_MCP_MODEL`: Vision model name (must be configured if using OCR)
+- `CARROT_MCP_APIKEY`: API key for the vision model (must be configured if using OCR)
 - `CARROT_MCP_PROXY`: HTTP proxy URL for API calls
+- `CARROT_MCP_FORCE_MULTIMODAL`: `true` = always return images as base64; `false` = always run OCR. When not set, uses tool parameter. If VLM not configured (no model/apikey), falls back to base64 with warning.
 
 ## NFC MCP Server Tools
 
