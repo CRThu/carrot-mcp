@@ -1,6 +1,6 @@
 [project]
 name = "carrot-mcp-io"
-version = "0.2.0"
+version = "0.3.0"
 description = "Carrot MCP IO Server - serial, TCP, UDP"
 readme = "README.md"
 requires-python = ">=3.10"
