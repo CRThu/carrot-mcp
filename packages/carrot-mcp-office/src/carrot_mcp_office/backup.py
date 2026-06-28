@@ -57,7 +57,8 @@ def _mirror_path(original: str) -> Path:
 
     D:\\docs\\reports\\file.xlsx -> backup_root/D/docs/reports/file (no ext)
     """
-    p = Path(original)
+    normalized = original.replace("\\", "/")
+    p = Path(normalized)
     root = backup_root()
     drive = p.drive.rstrip(":") if p.drive else "_"
     parts = list(p.parts[1:])
