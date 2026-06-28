@@ -146,6 +146,39 @@ Example:
 ]
 ```
 
+## PDF MCP Server Tools
+
+| Tool | Description |
+|------|-------------|
+| `version` | Get server version info |
+| `get_toc` | Get table of contents with page ranges |
+| `get_pages` | Convert specific pages to markdown (supports multimodal/OCR) |
+| `create_task` | Start background full PDF conversion |
+| `get_status` | Check progress of background conversion task |
+
+### Architecture
+
+```
+Application Layer (MCP tools)
+    ↓ get_toc/get_pages/create_task
+Conversion Layer (pymupdf4llm → markdown + images)
+    ↓
+Cache Layer (JSON: %APPDATA%/carrot-mcp/pdf/<hash>.json)
+    ↓ multimodal=False
+OCR Layer (litellm vision API)
+```
+
+- Cache: `%APPDATA%/carrot-mcp/pdf/<md5(pdf_path)>.json`
+- JSON structure: `{name, size, path, total_pages, toc, pages: {page_num: {content: [{type, data/base64/mime}]}}}`
+- Content stored as ordered blocks: `[{type: "text", data: "..."}, {type: "image", base64: "...", mime: "..."}]`
+- Images replaced with OCR text when multimodal=False (via `CARROT_MCP_MODEL` env var)
+- Background conversion via `threading.Thread` with progress tracking in separate `<hash>_tasks.json`
+
+**Environment variables:**
+- `CARROT_MCP_MODEL`: Vision model name (default: `openai/gpt-4o`)
+- `CARROT_MCP_APIKEY`: API key for the vision model
+- `CARROT_MCP_PROXY`: HTTP proxy URL for API calls
+
 ## NFC MCP Server Tools
 
 | Tool | Description |

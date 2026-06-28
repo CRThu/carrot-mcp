@@ -1,11 +1,108 @@
 """Carrot MCP PDF Server"""
 
+import base64
+import glob
+import json
+import os
+import re
 import sys
+import tempfile
+import threading
+import time
 from importlib.metadata import version as pkg_version
 
+import pymupdf
+import pymupdf4llm
 from mcp.server.fastmcp import FastMCP
 
+from carrot_mcp_pdf.cache import (
+    load_cache,
+    load_tasks,
+    make_task_id,
+    parse_page_range,
+    save_cache,
+    save_tasks,
+)
+from carrot_mcp_pdf.ocr import recognize_image
+
 mcp = FastMCP("carrot-mcp-pdf")
+
+_IMG_PATTERN = re.compile(r"!\[.*?\]\((.*?)\)")
+_MIME_MAP = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+}
+
+# Environment variables
+VISION_MODEL = os.environ.get("CARROT_MCP_MODEL", "openai/gpt-4o")
+VISION_API_KEY = os.environ.get("CARROT_MCP_APIKEY")
+VISION_PROXY = os.environ.get("CARROT_MCP_PROXY")
+
+
+def _read_image_as_base64(image_path: str) -> tuple[str, str]:
+    """Read image file and return (data_uri, mime)."""
+    ext = os.path.splitext(image_path)[1].lower()
+    mime = _MIME_MAP.get(ext, "image/jpeg")
+    with open(image_path, "rb") as f:
+        b64 = base64.b64encode(f.read()).decode()
+    return f"data:{mime};base64,{b64}", mime
+
+
+def _parse_page_content(text: str, image_dir: str, multimodal: bool) -> list[dict]:
+    """Parse markdown text into ordered content blocks [{type, data/base64/mime}].
+
+    Splits text by image references and interleaves text/image blocks
+    to preserve document flow order.
+    """
+    blocks = []
+    last_end = 0
+
+    for match in _IMG_PATTERN.finditer(text):
+        img_ref = match.group(1)
+        if img_ref.startswith("data:"):
+            continue
+
+        text_before = text[last_end:match.start()].strip()
+        if text_before:
+            blocks.append({"type": "text", "data": text_before})
+
+        img_path = os.path.join(image_dir, os.path.basename(img_ref))
+        if os.path.exists(img_path):
+            if multimodal:
+                data_uri, mime = _read_image_as_base64(img_path)
+                blocks.append({"type": "image", "base64": data_uri, "mime": mime})
+            else:
+                try:
+                    ocr_result = recognize_image(img_path, model=VISION_MODEL, api_key=VISION_API_KEY, proxy=VISION_PROXY)
+                except Exception:
+                    ocr_result = "[Image recognition failed]"
+                blocks.append({"type": "text", "data": ocr_result})
+
+        last_end = match.end()
+
+    remaining = text[last_end:].strip()
+    if remaining:
+        blocks.append({"type": "text", "data": remaining})
+
+    return blocks
+
+
+def _get_total_pages(pdf_path: str, cache: dict) -> int:
+    """Get total pages from cache or PDF file."""
+    total = cache.get("total_pages", 0)
+    if not total:
+        try:
+            doc = pymupdf.open(pdf_path)
+            total = doc.page_count
+            doc.close()
+            cache["total_pages"] = total
+            save_cache(pdf_path, cache)
+        except Exception:
+            pass
+    return total
 
 
 @mcp.tool()
@@ -23,9 +120,253 @@ def version() -> dict:
 
 
 @mcp.tool()
-def hello(name: str = "World") -> str:
-    """Say hello to someone."""
-    return f"Hello, {name}! From Carrot MCP PDF."
+def get_toc(pdf_path: str) -> dict:
+    """Get table of contents from a PDF.
+
+    Args:
+        pdf_path: Path to the PDF file.
+
+    Returns:
+        {status, has_toc, toc: [{level, title, start_page, end_page}]}
+        If no TOC: has_toc=false with message suggesting create_task.
+    """
+    if not os.path.exists(pdf_path):
+        return {"status": "error", "message": f"File not found: {pdf_path}"}
+
+    try:
+        doc = pymupdf.open(pdf_path)
+        toc_raw = doc.get_toc()
+        total_pages = doc.page_count
+        doc.close()
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+    cache = load_cache(pdf_path)
+    cache["total_pages"] = total_pages
+
+    if not toc_raw:
+        save_cache(pdf_path, cache)
+        return {
+            "status": "ok",
+            "has_toc": False,
+            "total_pages": total_pages,
+            "message": "No TOC found. This may be a scanned PDF. Use create_task for full conversion.",
+        }
+
+    toc_grouped = []
+    for level, title, page in toc_raw:
+        if toc_grouped and toc_grouped[-1]["level"] == level and toc_grouped[-1]["title"] == title:
+            toc_grouped[-1]["end_page"] = page
+        else:
+            toc_grouped.append({
+                "level": level,
+                "title": title,
+                "start_page": page,
+                "end_page": page,
+            })
+
+    cache["toc"] = toc_grouped
+    save_cache(pdf_path, cache)
+
+    return {
+        "status": "ok",
+        "has_toc": True,
+        "total_pages": total_pages,
+        "toc": toc_grouped,
+    }
+
+
+@mcp.tool()
+def get_pages(pdf_path: str, pages: str, multimodal: bool = True) -> dict:
+    """Convert specific PDF pages to markdown.
+
+    Args:
+        pdf_path: Path to the PDF file.
+        pages: Page range string, e.g. '1-5,8,10-12'.
+        multimodal: If True, return images as base64 in response.
+                    If False, send images to vision model for OCR, cache results.
+
+    Returns:
+        {status, pages: {page_num: {content: [{type, data/base64/mime}]}}, total_pages}
+    """
+    if not os.path.exists(pdf_path):
+        return {"status": "error", "message": f"File not found: {pdf_path}"}
+
+    try:
+        page_list = parse_page_range(pages)
+    except ValueError as e:
+        return {"status": "error", "message": f"Invalid page range: {e}"}
+
+    cache = load_cache(pdf_path)
+    total_pages = _get_total_pages(pdf_path, cache)
+
+    cached_pages = cache.get("pages", {})
+    uncached = [p for p in page_list if str(p) not in cached_pages]
+
+    if uncached:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            image_dir = os.path.join(tmp_dir, "images")
+            os.makedirs(image_dir, exist_ok=True)
+
+            try:
+                page_chunks = pymupdf4llm.to_markdown(
+                    pdf_path,
+                    pages=[p - 1 for p in uncached],
+                    write_images=True,
+                    image_path=image_dir,
+                    header=False,
+                    footer=False,
+                )
+            except Exception as e:
+                return {"status": "error", "message": f"Conversion failed: {e}"}
+
+            if isinstance(page_chunks, dict):
+                page_chunks = [page_chunks]
+
+            for i, chunk in enumerate(page_chunks):
+                page_num = uncached[i] if i < len(uncached) else chunk.get("metadata", {}).get("page", i + 1)
+                text = chunk.get("text", "")
+                content = _parse_page_content(text, image_dir, multimodal)
+                cached_pages[str(page_num)] = {"content": content}
+
+        cache["pages"] = cached_pages
+        save_cache(pdf_path, cache)
+
+    result_pages = {}
+    for p in page_list:
+        page_data = cached_pages.get(str(p))
+        if page_data:
+            result_pages[str(p)] = page_data
+
+    return {
+        "status": "ok",
+        "pages": result_pages,
+        "total_pages": total_pages,
+    }
+
+
+def _convert_all(pdf_path: str, task_id: str):
+    """Background thread: convert all pages and update task progress."""
+    cache = load_cache(pdf_path)
+    total_pages = _get_total_pages(pdf_path, cache)
+
+    tasks = load_tasks(pdf_path)
+    if task_id not in tasks:
+        return
+
+    cached_pages = cache.get("pages", {})
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        image_dir = os.path.join(tmp_dir, "images")
+        os.makedirs(image_dir, exist_ok=True)
+
+        for page_num in range(1, total_pages + 1):
+            if str(page_num) in cached_pages:
+                tasks[task_id]["current_page"] = page_num
+                tasks[task_id]["progress_percent"] = int(page_num / total_pages * 100)
+                save_tasks(pdf_path, tasks)
+                continue
+
+            try:
+                chunk = pymupdf4llm.to_markdown(
+                    pdf_path,
+                    pages=[page_num - 1],
+                    write_images=True,
+                    image_path=image_dir,
+                    header=False,
+                    footer=False,
+                )
+                if isinstance(chunk, list):
+                    chunk = chunk[0] if chunk else {}
+
+                text = chunk.get("text", "")
+                content = _parse_page_content(text, image_dir, multimodal=True)
+                cached_pages[str(page_num)] = {"content": content}
+            except Exception:
+                cached_pages[str(page_num)] = {"content": [{"type": "text", "data": ""}]}
+
+            cache["pages"] = cached_pages
+            save_cache(pdf_path, cache)
+
+            tasks[task_id]["current_page"] = page_num
+            tasks[task_id]["progress_percent"] = int(page_num / total_pages * 100)
+            save_tasks(pdf_path, tasks)
+
+    tasks[task_id]["status"] = "completed"
+    tasks[task_id]["progress_percent"] = 100
+    save_tasks(pdf_path, tasks)
+
+
+@mcp.tool()
+def create_task(pdf_path: str) -> dict:
+    """Start background full PDF conversion.
+
+    Args:
+        pdf_path: Path to the PDF file.
+
+    Returns:
+        {status, task_id, message, total_pages}
+    """
+    if not os.path.exists(pdf_path):
+        return {"status": "error", "message": f"File not found: {pdf_path}"}
+
+    cache = load_cache(pdf_path)
+    total_pages = _get_total_pages(pdf_path, cache)
+
+    task_id = make_task_id(pdf_path)
+    tasks = load_tasks(pdf_path)
+    tasks[task_id] = {
+        "status": "running",
+        "progress_percent": 0,
+        "current_page": 0,
+        "total_pages": total_pages,
+        "start_time": time.strftime("%Y-%m-%dT%H:%M:%S"),
+    }
+    save_tasks(pdf_path, tasks)
+
+    thread = threading.Thread(target=_convert_all, args=(pdf_path, task_id), daemon=True)
+    thread.start()
+
+    return {
+        "status": "ok",
+        "task_id": task_id,
+        "total_pages": total_pages,
+        "message": "Background conversion started",
+    }
+
+
+@mcp.tool()
+def get_status(task_id: str) -> dict:
+    """Get status of a background conversion task.
+
+    Args:
+        task_id: The task ID returned by create_task.
+
+    Returns:
+        {status, task_id, conversion_status, progress_percent, current_page, total_pages}
+    """
+    base = os.environ.get("APPDATA", os.path.expanduser("~/.local/share"))
+    pattern = os.path.join(base, "carrot-mcp", "pdf", "*_tasks.json")
+
+    for tasks_path in glob.glob(pattern):
+        try:
+            with open(tasks_path, "r", encoding="utf-8") as f:
+                tasks = json.load(f)
+            if task_id in tasks:
+                task = tasks[task_id]
+                return {
+                    "status": "ok",
+                    "task_id": task_id,
+                    "conversion_status": task.get("status", "unknown"),
+                    "progress_percent": task.get("progress_percent", 0),
+                    "current_page": task.get("current_page", 0),
+                    "total_pages": task.get("total_pages", 0),
+                    "start_time": task.get("start_time", ""),
+                }
+        except (json.JSONDecodeError, IOError):
+            continue
+
+    return {"status": "error", "message": f"Task not found: {task_id}"}
 
 
 def main():
