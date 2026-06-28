@@ -159,14 +159,19 @@ Example:
 ### Architecture
 
 ```
-Application Layer (MCP tools)
+Application Layer (server.py — MCP tools, thin routing)
     ↓ get_toc/get_pages/create_task
-Conversion Layer (pymupdf4llm → markdown + images)
+Conversion Layer (converter.py — pymupdf4llm → markdown + images)
     ↓ force_ocr=True
-OCR Layer (pymupdf render → litellm vision API)
+OCR Layer (ocr.py — litellm vision API)
     ↓ multimodal=False
-Cache Layer (JSON: %APPDATA%/carrot-mcp/pdf/<hash>.json)
+Cache Layer (cache.py — JSON: %APPDATA%/carrot-mcp/pdf/<hash>.json)
 ```
+
+- **server.py** — MCP tool definitions only, delegates to converter/cache
+- **converter.py** — PDF conversion, image processing, content parsing, VLM config
+- **ocr.py** — Vision model OCR via litellm (single responsibility)
+- **cache.py** — Cache/task persistence, path management, parse_page_range
 
 - Cache: `%APPDATA%/carrot-mcp/pdf/<md5(pdf_path)>.json`
 - JSON structure: `{name, size, path, total_pages, toc, pages: {page_num: {content: [{type, data/base64/mime}], force_ocr: bool}}}`

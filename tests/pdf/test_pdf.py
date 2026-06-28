@@ -16,13 +16,17 @@ from carrot_mcp_pdf.cache import (
     save_cache,
     save_tasks,
 )
+from carrot_mcp_pdf.converter import (
+    VISION_API_KEY,
+    VISION_MODEL,
+    get_total_pages,
+    parse_page_content,
+    read_image_as_base64,
+    resolve_multimodal,
+    vlm_configured,
+)
 from carrot_mcp_pdf.ocr import recognize_image
 from carrot_mcp_pdf.server import (
-    _get_total_pages,
-    _parse_page_content,
-    _read_image_as_base64,
-    _resolve_multimodal,
-    _vlm_configured,
     create_task,
     get_pages,
     get_status,
@@ -236,7 +240,7 @@ def test_read_image_as_base64(tmp_path):
     img = tmp_path / "test.png"
     img.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100)
 
-    data_uri, mime = _read_image_as_base64(str(img))
+    data_uri, mime = read_image_as_base64(str(img))
     assert data_uri.startswith("data:image/png;base64,")
     assert mime == "image/png"
 
@@ -245,7 +249,7 @@ def test_read_image_as_base64_jpeg(tmp_path):
     img = tmp_path / "photo.jpg"
     img.write_bytes(b"\xff\xd8\xff" + b"\x00" * 100)
 
-    data_uri, mime = _read_image_as_base64(str(img))
+    data_uri, mime = read_image_as_base64(str(img))
     assert "image/jpeg" in data_uri
     assert mime == "image/jpeg"
 
@@ -254,27 +258,27 @@ def test_read_image_as_base64_unknown_ext(tmp_path):
     img = tmp_path / "img.xyz"
     img.write_bytes(b"\x00" * 100)
 
-    _, mime = _read_image_as_base64(str(img))
+    _, mime = read_image_as_base64(str(img))
     assert mime == "image/jpeg"  # default
 
 
 # ── server.py: _parse_page_content ───────────────────────────────────────────
 
 def test_parse_page_content_text_only():
-    blocks = _parse_page_content("Hello world", "/nonexistent", multimodal=True)
+    blocks = parse_page_content("Hello world", "/nonexistent", multimodal=True)
     assert len(blocks) == 1
     assert blocks[0] == {"type": "text", "data": "Hello world"}
 
 
 def test_parse_page_content_no_images():
-    blocks = _parse_page_content("Line 1\n\nLine 2", "/nonexistent", multimodal=True)
+    blocks = parse_page_content("Line 1\n\nLine 2", "/nonexistent", multimodal=True)
     assert len(blocks) == 1
     assert "Line 1" in blocks[0]["data"]
 
 
 def test_parse_page_content_image_not_found(tmp_path):
     text = "Text before ![img](missing.png) text after"
-    blocks = _parse_page_content(text, str(tmp_path), multimodal=True)
+    blocks = parse_page_content(text, str(tmp_path), multimodal=True)
     assert len(blocks) == 2
     assert blocks[0]["type"] == "text"
     assert "Text before" in blocks[0]["data"]
@@ -287,7 +291,7 @@ def test_parse_page_content_with_image_multimodal(tmp_path):
     img.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 50)
 
     text = "Before ![img](photo.png) After"
-    blocks = _parse_page_content(text, str(tmp_path), multimodal=True)
+    blocks = parse_page_content(text, str(tmp_path), multimodal=True)
     assert len(blocks) == 3
     assert blocks[0]["type"] == "text"
     assert blocks[1]["type"] == "image"
@@ -300,10 +304,10 @@ def test_parse_page_content_with_image_ocr(tmp_path):
     img.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 50)
 
     text = "See ![img](chart.png) above"
-    with patch("carrot_mcp_pdf.server.VISION_MODEL", "test-model"), \
-         patch("carrot_mcp_pdf.server.VISION_API_KEY", "fake-key"), \
-         patch("carrot_mcp_pdf.server.recognize_image", return_value="OCR text"):
-        blocks = _parse_page_content(text, str(tmp_path), multimodal=False)
+    with patch("carrot_mcp_pdf.converter.VISION_MODEL", "test-model"), \
+         patch("carrot_mcp_pdf.converter.VISION_API_KEY", "fake-key"), \
+         patch("carrot_mcp_pdf.converter.recognize_image", return_value="OCR text"):
+        blocks = parse_page_content(text, str(tmp_path), multimodal=False)
 
     assert len(blocks) == 3
     assert blocks[1] == {"type": "text", "data": "OCR text"}
@@ -311,7 +315,7 @@ def test_parse_page_content_with_image_ocr(tmp_path):
 
 def test_parse_page_content_data_uri_skipped():
     text = "Text ![img](data:image/png;base64,abc) more"
-    blocks = _parse_page_content(text, "/nonexistent", multimodal=True)
+    blocks = parse_page_content(text, "/nonexistent", multimodal=True)
     assert len(blocks) == 2
     assert blocks[0] == {"type": "text", "data": "Text"}
     assert blocks[1] == {"type": "text", "data": "more"}
@@ -320,7 +324,7 @@ def test_parse_page_content_data_uri_skipped():
 
 
 def test_parse_page_content_empty_text():
-    blocks = _parse_page_content("", "/nonexistent", multimodal=True)
+    blocks = parse_page_content("", "/nonexistent", multimodal=True)
     assert blocks == []
 
 
@@ -328,12 +332,12 @@ def test_parse_page_content_empty_text():
 
 def test_get_total_pages_from_cache():
     cache = {"total_pages": 42}
-    assert _get_total_pages("/fake.pdf", cache) == 42
+    assert get_total_pages("/fake.pdf", cache) == 42
 
 
 def test_get_total_pages_zero_no_file(tmp_path):
     cache = {"total_pages": 0}
-    result = _get_total_pages(str(tmp_path / "nonexistent.pdf"), cache)
+    result = get_total_pages(str(tmp_path / "nonexistent.pdf"), cache)
     assert result == 0
 
 
@@ -360,8 +364,8 @@ def test_get_pages_out_of_range(tmp_path):
     pdf = tmp_path / "small.pdf"
     pdf.write_bytes(b"fake pdf")
 
-    with patch("carrot_mcp_pdf.server._get_total_pages", return_value=3):
-        with patch("carrot_mcp_pdf.server.load_cache", return_value={"pages": {}}):
+    with patch("carrot_mcp_pdf.converter.get_total_pages", return_value=3):
+        with patch("carrot_mcp_pdf.cache.load_cache", return_value={"pages": {}}):
             result = get_pages(str(pdf), "1-5")
 
     assert result["status"] == "error"
@@ -475,51 +479,51 @@ def test_recognize_image_env_defaults(monkeypatch, tmp_path):
 # ── _resolve_multimodal ─────────────────────────────────────────────────────
 
 def test_resolve_multimodal_no_env():
-    with patch("carrot_mcp_pdf.server._MULTIMODAL_ENV", None):
-        assert _resolve_multimodal(True) is True
-        assert _resolve_multimodal(False) is False
+    with patch("carrot_mcp_pdf.converter._MULTIMODAL_ENV", None):
+        assert resolve_multimodal(True) is True
+        assert resolve_multimodal(False) is False
 
 
 def test_resolve_multimodal_env_true(monkeypatch):
     monkeypatch.setenv("CARROT_MCP_FORCE_MULTIMODAL", "true")
-    import carrot_mcp_pdf.server as srv
-    srv._MULTIMODAL_ENV = "true"
-    assert _resolve_multimodal(False) is True
-    srv._MULTIMODAL_ENV = None
+    import carrot_mcp_pdf.converter as conv
+    conv._MULTIMODAL_ENV = "true"
+    assert resolve_multimodal(False) is True
+    conv._MULTIMODAL_ENV = None
 
 
 def test_resolve_multimodal_env_false(monkeypatch):
     monkeypatch.setenv("CARROT_MCP_FORCE_MULTIMODAL", "false")
-    import carrot_mcp_pdf.server as srv
-    srv._MULTIMODAL_ENV = "false"
-    assert _resolve_multimodal(True) is False
-    srv._MULTIMODAL_ENV = None
+    import carrot_mcp_pdf.converter as conv
+    conv._MULTIMODAL_ENV = "false"
+    assert resolve_multimodal(True) is False
+    conv._MULTIMODAL_ENV = None
 
 
 # ── _vlm_configured ─────────────────────────────────────────────────────────
 
 def test_vlm_configured_both():
-    with patch("carrot_mcp_pdf.server.VISION_MODEL", "gpt-4o"), \
-         patch("carrot_mcp_pdf.server.VISION_API_KEY", "key"):
-        assert _vlm_configured() is True
+    with patch("carrot_mcp_pdf.converter.VISION_MODEL", "gpt-4o"), \
+         patch("carrot_mcp_pdf.converter.VISION_API_KEY", "key"):
+        assert vlm_configured() is True
 
 
 def test_vlm_configured_no_model():
-    with patch("carrot_mcp_pdf.server.VISION_MODEL", None), \
-         patch("carrot_mcp_pdf.server.VISION_API_KEY", "key"):
-        assert _vlm_configured() is False
+    with patch("carrot_mcp_pdf.converter.VISION_MODEL", None), \
+         patch("carrot_mcp_pdf.converter.VISION_API_KEY", "key"):
+        assert vlm_configured() is False
 
 
 def test_vlm_configured_no_key():
-    with patch("carrot_mcp_pdf.server.VISION_MODEL", "gpt-4o"), \
-         patch("carrot_mcp_pdf.server.VISION_API_KEY", None):
-        assert _vlm_configured() is False
+    with patch("carrot_mcp_pdf.converter.VISION_MODEL", "gpt-4o"), \
+         patch("carrot_mcp_pdf.converter.VISION_API_KEY", None):
+        assert vlm_configured() is False
 
 
 def test_vlm_configured_neither():
-    with patch("carrot_mcp_pdf.server.VISION_MODEL", None), \
-         patch("carrot_mcp_pdf.server.VISION_API_KEY", None):
-        assert _vlm_configured() is False
+    with patch("carrot_mcp_pdf.converter.VISION_MODEL", None), \
+         patch("carrot_mcp_pdf.converter.VISION_API_KEY", None):
+        assert vlm_configured() is False
 
 
 # ── _parse_page_content VLM fallback ────────────────────────────────────────
@@ -529,9 +533,9 @@ def test_parse_page_content_vlm_not_configured_fallback(tmp_path):
     img.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 50)
 
     text = "See ![img](chart.png) above"
-    with patch("carrot_mcp_pdf.server.VISION_MODEL", None), \
-         patch("carrot_mcp_pdf.server.VISION_API_KEY", None):
-        blocks = _parse_page_content(text, str(tmp_path), multimodal=False)
+    with patch("carrot_mcp_pdf.converter.VISION_MODEL", None), \
+         patch("carrot_mcp_pdf.converter.VISION_API_KEY", None):
+        blocks = parse_page_content(text, str(tmp_path), multimodal=False)
 
     assert len(blocks) == 4
     assert blocks[0] == {"type": "text", "data": "See"}

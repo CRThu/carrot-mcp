@@ -34,14 +34,19 @@ uv run python -m carrot_mcp_pdf
 ## Architecture
 
 ```
-Application Layer (MCP tools: get_toc, get_pages, create_task, get_status)
-    ↓ pymupdf4llm
-Conversion Layer (markdown + images)
+Application Layer (server.py — MCP tools, thin routing)
+    ↓ get_toc/get_pages/create_task
+Conversion Layer (converter.py — pymupdf4llm → markdown + images)
     ↓ force_ocr=True
-OCR Layer (pymupdf render → litellm vision API)
+OCR Layer (ocr.py — litellm vision API)
     ↓ multimodal=False
-Cache Layer (JSON: %APPDATA%/carrot-mcp/pdf/<md5>.json)
+Cache Layer (cache.py — JSON: %APPDATA%/carrot-mcp/pdf/<md5>.json)
 ```
+
+- **server.py** — MCP tool definitions only, delegates to converter/cache
+- **converter.py** — PDF conversion, image processing, content parsing, VLM config
+- **ocr.py** — Vision model OCR via litellm (single responsibility)
+- **cache.py** — Cache/task persistence, path management, parse_page_range
 
 - **Cache**: `%APPDATA%/carrot-mcp/pdf/<md5(pdf_path)>.json`
 - **Content blocks**: ordered `[{type: "text", data: "..."}, {type: "image", base64: "...", mime: "..."}]`
