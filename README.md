@@ -49,6 +49,15 @@ uvx carrot-mcp-pdf@latest
 uvx carrot-mcp-io@latest
 uvx carrot-mcp-nfc@latest
 uvx carrot-mcp-office@latest
+
+# List available servers
+uvx carrot-mcp list
+
+# Add all carrot servers to supported agents
+uvx carrot-mcp add
+
+# Remove all carrot servers from agents
+uvx carrot-mcp remove
 ```
 
 ### CLI
