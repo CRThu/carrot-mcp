@@ -58,13 +58,19 @@ uvx carrot-mcp-office@latest
 carrot-mcp list
 
 # Run a specific server
-carrot-mcp pdf
-carrot-mcp io
-carrot-mcp nfc
-carrot-mcp office
+carrot-mcp run pdf
+carrot-mcp run io
+carrot-mcp run nfc
+carrot-mcp run office
+
+# Add all carrot servers to supported agents
+carrot-mcp add
+
+# Remove all carrot servers from agents
+carrot-mcp remove
 
 # Run with uv
-uv run carrot-mcp office
+uv run carrot-mcp run office
 ```
 
 ### Python module
@@ -96,6 +102,15 @@ python -m carrot_mcp_office
 | `get_pages` | Convert specific pages to markdown (supports multimodal/OCR/force_ocr) |
 | `create_task` | Start background full PDF conversion (multimodal/force_ocr option) |
 | `get_status` | Check progress of background conversion task |
+
+**Environment variables:**
+
+| Variable | Description |
+|----------|-------------|
+| `CARROT_MCP_MODEL` | Vision model name (required if using OCR) |
+| `CARROT_MCP_APIKEY` | API key for the vision model |
+| `CARROT_MCP_PROXY` | HTTP proxy URL for API calls |
+| `CARROT_MCP_FORCE_MULTIMODAL` | `true` = always return images; `false` = always run OCR |
 
 ### Office MCP Tools
 
@@ -152,6 +167,14 @@ Features:
 - **Legacy format support**: `.doc` → `.docx`, `.xls` → `.xlsx` via win32com (Windows)
 - **100 version limit** with 14-day expiry per file
 
+**Environment variables:**
+
+| Variable | Description |
+|----------|-------------|
+| `CARROT_MCP_BACKUP_MAX_VERSIONS` | Max backup versions per file (default: 100) |
+| `CARROT_MCP_BACKUP_MAX_AGE_DAYS` | Days before backup expiry (default: 14) |
+| `CARROT_MCP_BACKUP_ROOT` | Custom backup directory |
+
 ## Hardware Servers
 
 ### IO MCP Tools
@@ -192,7 +215,17 @@ Features:
 
 ## MCP Configuration
 
-Add to your MCP client config (e.g., Claude Desktop):
+### Auto-config (recommended)
+
+```bash
+carrot-mcp add
+```
+
+This adds all servers to supported agents (claude, opencode, mimocode).
+
+### Manual config
+
+**Claude Desktop** (`~/.claude.json`):
 
 ```json
 {
@@ -212,6 +245,40 @@ Add to your MCP client config (e.g., Claude Desktop):
     "carrot-nfc": {
       "command": "uvx",
       "args": ["carrot-mcp-nfc@latest"]
+    }
+  }
+}
+```
+
+**OpenCode / MiMoCode** (`~/.config/opencode/opencode.jsonc` or `~/.config/mimocode/mimocode.jsonc`):
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "carrot-pdf": {
+      "type": "local",
+      "command": ["uvx", "carrot-mcp-pdf@latest"],
+      "enabled": true,
+      "environment": {}
+    },
+    "carrot-office": {
+      "type": "local",
+      "command": ["uvx", "carrot-mcp-office@latest"],
+      "enabled": true,
+      "environment": {}
+    },
+    "carrot-io": {
+      "type": "local",
+      "command": ["uvx", "carrot-mcp-io@latest"],
+      "enabled": true,
+      "environment": {}
+    },
+    "carrot-nfc": {
+      "type": "local",
+      "command": ["uvx", "carrot-mcp-nfc@latest"],
+      "enabled": true,
+      "environment": {}
     }
   }
 }

@@ -27,6 +27,11 @@ all = [
 [project.scripts]
 carrot-mcp = "carrot_mcp.cli:main"
 
+[project.entry-points."carrot_mcp.agents"]
+claude = "carrot_mcp.claude"
+opencode = "carrot_mcp.opencode"
+mimocode = "carrot_mcp.mimocode"
+
 [tool.uv.workspace]
 members = ["packages/*"]
 

@@ -321,6 +321,43 @@ File Layer (.xlsx, .docx)
 
 CLI auto-discovers servers via entry points - no need to update cli.py.
 
+## Agent Config Modules
+
+CLI manages MCP server configs for different agents via entry points.
+
+**Supported agents:**
+
+| Agent | Config Path | Backup Path | Env Key |
+|-------|-------------|-------------|---------|
+| claude | `~/.claude.json` | `~/.claude/` | `env` |
+| mimocode | `~/.config/mimocode/mimocode.jsonc` | `~/.config/mimocode/` | `environment` |
+| opencode | `~/.config/opencode/opencode.jsonc` | `~/.config/opencode/` | `environment` |
+
+**CLI commands:**
+```bash
+carrot-mcp run <server>    # Run MCP server
+carrot-mcp list             # List available servers
+carrot-mcp add              # Add all carrot servers to all agents
+carrot-mcp remove           # Remove all carrot servers from all agents
+```
+
+**Agent detection:**
+- claude: checks if `~/.claude.json` exists
+- mimocode/opencode: checks if parent directory exists (creates config with `$schema` if missing)
+
+**Env preservation:**
+- When adding servers, existing `env`/`environment` configs are preserved
+- Servers not in the new list are removed
+
+**Adding a new agent:**
+1. Create `src/carrot_mcp/<agent>.py` with functions: `is_available`, `add`, `remove`, `list_carrot`, `get_env`
+2. Add entry point in `pyproject.toml`:
+   ```toml
+   [project.entry-points."carrot_mcp.agents"]
+   <agent> = "carrot_mcp.<agent>"
+   ```
+3. Write tests in `tests/test_agents.py`
+
 ## License
 
 Apache 2.0
