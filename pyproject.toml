@@ -10,6 +10,7 @@ dependencies = [
     "carrot-mcp-io",
     "carrot-mcp-nfc",
     "carrot-mcp-office",
+    "carrot-mcp-sys",
 ]
 
 [project.optional-dependencies]
@@ -17,11 +18,13 @@ pdf = ["carrot-mcp-pdf"]
 io = ["carrot-mcp-io"]
 nfc = ["carrot-mcp-nfc"]
 office = ["carrot-mcp-office"]
+sys = ["carrot-mcp-sys"]
 all = [
     "carrot-mcp-pdf",
     "carrot-mcp-io",
     "carrot-mcp-nfc",
     "carrot-mcp-office",
+    "carrot-mcp-sys",
 ]
 
 [project.scripts]
@@ -40,6 +43,7 @@ carrot-mcp-io = { workspace = true }
 carrot-mcp-nfc = { workspace = true }
 carrot-mcp-pdf = { workspace = true }
 carrot-mcp-office = { workspace = true }
+carrot-mcp-sys = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

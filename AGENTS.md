@@ -25,6 +25,9 @@ carrot-mcp/
 │   └── carrot-mcp-nfc/         # NFC reader MCP server
 │       ├── pyproject.toml
 │       └── src/carrot_mcp_nfc/
+│   └── carrot-mcp-sys/         # System MCP server (screenshot, keyboard, app launcher)
+│       ├── pyproject.toml
+│       └── src/carrot_mcp_sys/
 └── tests/
     ├── pdf/
     ├── office/
@@ -33,7 +36,8 @@ carrot-mcp/
     │   ├── test_channel.py
     │   ├── test_logger.py
     │   └── test_server.py
-    └── nfc/
+    ├── nfc/
+    └── sys/
 ```
 
 ## Build & Test Commands
@@ -56,8 +60,10 @@ uv run carrot-mcp pdf
 uv run carrot-mcp office
 uv run carrot-mcp serial
 uv run carrot-mcp nfc
+uv run carrot-mcp sys
 uv run python -m carrot_mcp_pdf
 uv run python -m carrot_mcp_office
+uv run python -m carrot_mcp_sys
 ```
 
 ## Code Style
@@ -234,73 +240,31 @@ Hardware Layer (PN532 / CLRC663 via serial)
 - `script` hex validation is done inside each handler (consistent "Invalid hex string" errors); no pre-validation layer
 - Trace output captured via loguru sink, returned as JSON via `trace_get()`
 
-## Office MCP Server Tools
+## Sys MCP Server Tools
 
 | Tool | Description |
 |------|-------------|
-| `version` | Get server version info and backup configuration |
-| `workbook_metadata` | Get workbook metadata (sheet names, properties) |
-| `workbook_search` | Search for values in a sheet |
-| `create_sheet` | Create a new sheet (creates workbook if needed) |
-| `rename_sheet` | Rename a sheet |
-| `delete_sheet` | Delete a sheet |
-| `insert_rows` | Insert rows into a sheet |
-| `delete_rows` | Delete rows from a sheet |
-| `insert_columns` | Insert columns into a sheet |
-| `delete_columns` | Delete columns from a sheet |
-| `read_range` | Read cell values from a range |
-| `write_range` | Write a 2D array to a range (supports formulas) |
-| `copy_range` | Copy a range to another location |
-| `delete_range` | Clear cell contents in a range |
-| `read_chart` | Read chart information from a sheet |
-| `write_chart` | Create a chart (bar, line, pie, scatter) |
-| `format_range` | Format cells (font, color, alignment, merge/unmerge) |
-| `inspect` | Inspect document structure (paragraphs, tables, images) |
-| `insert_para` | Insert a paragraph |
-| `modify_para` | Modify paragraph text |
-| `format_para` | Format a paragraph (style, alignment, font) |
-| `delete_para` | Delete a paragraph |
-| `insert_table` | Insert a table with optional data |
-| `modify_table` | Modify a table cell |
-| `format_table` | Apply a table style |
-| `delete_table` | Delete a table |
-| `insert_image` | Insert an image |
-| `delete_image` | Delete an inline image |
-| `backup_history` | List all backup versions of a file |
-| `backup_restore` | Restore a file to a specific backup version |
+| `version` | Get server version info |
+| `list_monitors` | List all available monitors with coordinates and resolution |
+| `screenshot` | Capture screenshot(s) - supports monitor index, region coordinates, or all monitors |
 
 ### Architecture
 
 ```
 Application Layer (MCP tools)
-    ↓ workbook/doc operations via openpyxl / python-docx
-    ↓ auto-backup via backup.py
-    ↓ legacy format conversion via convert.py
-Library Layer (openpyxl, python-docx, win32com)
-    ↓ stateless per-call: open → operate → save → close
-File Layer (.xlsx, .docx)
+    ↓ screenshot via mss library
+Library Layer (mss - native OS screenshot API)
+    ↓ raw pixel capture
+Hardware Layer (display output)
 ```
 
-- Stateless per-call pattern: each tool opens file, performs operation, saves, closes
-- `create_sheet` creates workbook if file doesn't exist; other Excel tools require existing file
-- `insert_para` / `insert_table` / `insert_image` create document if file doesn't exist
-- Split modules: `excel.py` (16 tools), `word.py` (11 tools), `backup.py` (versioning), `convert.py` (legacy format), shared `_mcp.py` FastMCP instance
-- Word insert-by-index uses XML manipulation (`_element.addprevious()`)
-- Word `delete_image` only handles inline shapes (python-docx limitation)
-
-**Backup system:**
-- Auto-versioning: every modification creates a new version in `%APPDATA%/carrot-mcp/office/`
-- Mirrored directory structure with `_versions.json` metadata
-- 100 version limit with pruning (oldest 50 removed when exceeded)
-- 14-day expiry for old versions
-- `backup_history(path)` lists all versions, `backup_restore(path, version)` restores
-- Each mutation returns `version` number in result for LLM context
-- Configurable via environment variables: `CARROT_MCP_BACKUP_MAX_VERSIONS`, `CARROT_MCP_BACKUP_MAX_AGE_DAYS`, `CARROT_MCP_BACKUP_ROOT`
-
-**Legacy format conversion:**
-- Implicit auto-conversion: `.doc` → `.docx`, `.xls` → `.xlsx` via win32com
-- Original file preserved, new format created alongside
-- Requires `pywin32` on Windows; returns error on other platforms
+- All coordinates are **absolute screen pixels** (origin at top-left of virtual screen)
+- `list_monitors` skips index 0 (virtual combined screen), returns 1-based indices
+- `screenshot(monitor=N)` captures full monitor; region coordinates are absolute (no offset needed)
+- Single-monitor systems auto-select monitor when no args provided
+- Returns images as MCP-compatible dicts: `{"type": "image", "base64": "data:image/png;base64,...", "mime": "image/png"}`
+- Each monitor returned as separate dict entry for independent LLM processing
+- Optional `save_path` for saving to file
 
 ## Adding a New MCP Server
 

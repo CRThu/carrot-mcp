@@ -12,7 +12,7 @@ A collection of MCP (Model Context Protocol) servers for various hardware and da
 pip install carrot-mcp
 ```
 
-This installs all MCP servers (pdf, io, nfc, office) by default.
+This installs all MCP servers (pdf, io, nfc, office, sys) by default.
 
 ### uv
 
@@ -28,6 +28,7 @@ pip install carrot-mcp[pdf]
 pip install carrot-mcp[io]
 pip install carrot-mcp[nfc]
 pip install carrot-mcp[office]
+pip install carrot-mcp[sys]
 ```
 
 ### Or install sub-packages directly
@@ -37,6 +38,7 @@ pip install carrot-mcp-pdf
 pip install carrot-mcp-io
 pip install carrot-mcp-nfc
 pip install carrot-mcp-office
+pip install carrot-mcp-sys
 ```
 
 ## Quick Start
@@ -49,6 +51,7 @@ uvx carrot-mcp-pdf@latest
 uvx carrot-mcp-io@latest
 uvx carrot-mcp-nfc@latest
 uvx carrot-mcp-office@latest
+uvx carrot-mcp-sys@latest
 
 # List available servers
 uvx carrot-mcp list
@@ -71,6 +74,7 @@ carrot-mcp run pdf
 carrot-mcp run io
 carrot-mcp run nfc
 carrot-mcp run office
+carrot-mcp run sys
 
 # Add all carrot servers to supported agents
 carrot-mcp add
@@ -89,6 +93,7 @@ python -m carrot_mcp_pdf
 python -m carrot_mcp_io
 python -m carrot_mcp_nfc
 python -m carrot_mcp_office
+python -m carrot_mcp_sys
 ```
 
 ## Available Servers
@@ -99,6 +104,7 @@ python -m carrot_mcp_office
 | Office | `carrot-mcp-office` | Document | Excel & Word automation with auto-backup |
 | IO | `carrot-mcp-io` | Hardware | Serial, TCP, UDP communication |
 | NFC | `carrot-mcp-nfc` | Hardware | NFC reader (PN532, CLRC663) |
+| SYS | `carrot-mcp-sys` | System | Screenshot capture for multimodal analysis |
 
 ## Document Servers
 
@@ -222,6 +228,14 @@ Features:
 | `trace_get` | Get trace log entries |
 | `trace_clear` | Clear trace log buffer |
 
+### System MCP Tools
+
+| Tool | Description |
+|------|-------------|
+| `version` | Get server version info |
+| `list_monitors` | List all monitors with coordinates and resolution |
+| `screenshot` | Capture screenshot(s) - supports monitor index, region coordinates, or all monitors |
+
 ## MCP Configuration
 
 ### Auto-config (recommended)
@@ -254,6 +268,10 @@ This adds all servers to supported agents (claude, opencode, mimocode).
     "carrot-nfc": {
       "command": "uvx",
       "args": ["carrot-mcp-nfc@latest"]
+    },
+    "carrot-sys": {
+      "command": "uvx",
+      "args": ["carrot-mcp-sys@latest"]
     }
   }
 }
@@ -288,6 +306,12 @@ This adds all servers to supported agents (claude, opencode, mimocode).
       "command": ["uvx", "carrot-mcp-nfc@latest"],
       "enabled": true,
       "environment": {}
+    },
+    "carrot-sys": {
+      "type": "local",
+      "command": ["uvx", "carrot-mcp-sys@latest"],
+      "enabled": true,
+      "environment": {}
     }
   }
 }
@@ -309,6 +333,7 @@ uv run pytest tests/pdf/ -v
 uv run pytest tests/office/ -v
 uv run pytest tests/io/ -v
 uv run pytest tests/nfc/ -v
+uv run pytest tests/sys/ -v
 
 # Bump version and release
 bump.bat                        # interactive
