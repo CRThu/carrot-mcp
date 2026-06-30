@@ -457,10 +457,10 @@ def script(port: str, steps: list[dict[str, Any]], fmt: str = "hex") -> list[dic
     Args:
         port: Connection identifier
         steps: List of operations. Each step is a dict with 'op' field:
-            - write: {"op": "write", "data": "<hex|ascii>"}
-            - read:  {"op": "read", "size"?: int, "timeout"?: float, "expect"?: "<hex|ascii>", "on_mismatch"?: "stop"|"continue"}
-            - wait:  {"op": "wait", "ms": int}
-            - flush: {"op": "flush"}
+            - {"op": "write", "data": "<hex|ascii>"}
+            - {"op": "read", "size"?: int, "timeout"?: float, "expect"?: "<hex|ascii>", "on_mismatch"?: "stop"|"continue"}
+            - {"op": "wait", "ms": int}
+            - {"op": "flush"}
         fmt: Data format for all steps - "hex" or "ascii" (default "hex")
 
     Returns:
