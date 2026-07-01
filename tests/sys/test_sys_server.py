@@ -1,6 +1,9 @@
 """Tests for carrot_mcp_sys.server module."""
 
+import json
 from unittest.mock import MagicMock, patch
+
+from mcp.types import ImageContent, TextContent
 
 from carrot_mcp_sys.server import (
     _grab,
@@ -9,6 +12,20 @@ from carrot_mcp_sys.server import (
     screenshot,
     version,
 )
+
+
+# ── helpers ──────────────────────────────────────────────────────────────────
+
+def _parse_screenshot_result(result):
+    """Extract metadata dict and image list from screenshot() content list."""
+    text = None
+    images = []
+    for item in result:
+        if isinstance(item, TextContent):
+            text = json.loads(item.text)
+        elif isinstance(item, ImageContent):
+            images.append(item)
+    return text, images
 
 
 # ── version ──────────────────────────────────────────────────────────────────
@@ -90,28 +107,40 @@ def test_list_monitors_single_monitor():
 
 # ── screenshot validation ────────────────────────────────────────────────────
 
+def _error_text(result):
+    """Extract error dict from a content list."""
+    for item in result:
+        if isinstance(item, TextContent):
+            return json.loads(item.text)
+    return None
+
+
 def test_screenshot_partial_region():
     result = screenshot(left=10)
-    assert result["status"] == "error"
-    assert "must all be provided" in result["error"]
+    err = _error_text(result)
+    assert err["status"] == "error"
+    assert "must all be provided" in err["error"]
 
 
 def test_screenshot_region_missing_width():
     result = screenshot(left=10, top=20, height=100)
-    assert result["status"] == "error"
-    assert "must all be provided" in result["error"]
+    err = _error_text(result)
+    assert err["status"] == "error"
+    assert "must all be provided" in err["error"]
 
 
 def test_screenshot_zero_width():
     result = screenshot(left=10, top=20, width=0, height=100)
-    assert result["status"] == "error"
-    assert "positive" in result["error"]
+    err = _error_text(result)
+    assert err["status"] == "error"
+    assert "positive" in err["error"]
 
 
 def test_screenshot_negative_height():
     result = screenshot(left=10, top=20, width=100, height=-1)
-    assert result["status"] == "error"
-    assert "positive" in result["error"]
+    err = _error_text(result)
+    assert err["status"] == "error"
+    assert "positive" in err["error"]
 
 
 def test_screenshot_invalid_monitor():
@@ -121,8 +150,9 @@ def test_screenshot_invalid_monitor():
     with patch("carrot_mcp_sys.server.mss.mss", return_value=_mock_sct_cm(mock_sct)):
         result = screenshot(monitor=5)
 
-    assert result["status"] == "error"
-    assert "Invalid monitor" in result["error"]
+    err = _error_text(result)
+    assert err["status"] == "error"
+    assert "Invalid monitor" in err["error"]
 
 
 def test_screenshot_monitor_zero():
@@ -132,7 +162,8 @@ def test_screenshot_monitor_zero():
     with patch("carrot_mcp_sys.server.mss.mss", return_value=_mock_sct_cm(mock_sct)):
         result = screenshot(monitor=0)
 
-    assert result["status"] == "error"
+    err = _error_text(result)
+    assert err["status"] == "error"
 
 
 # ── screenshot capture ───────────────────────────────────────────────────────
@@ -145,15 +176,23 @@ def _mock_grab_result():
 
 
 def test_screenshot_single_monitor_auto():
-    mock_sct = _mock_mss_instance()
+    monitors = [
+        {"left": 0, "top": 0, "width": 1920, "height": 1080},
+        {"left": 0, "top": 0, "width": 1920, "height": 1080},
+    ]
+    mock_sct = MagicMock()
+    mock_sct.monitors = monitors
     mock_sct.grab.return_value = _mock_grab_result()
 
     with patch("carrot_mcp_sys.server.mss.mss", return_value=_mock_sct_cm(mock_sct)):
         result = screenshot()
 
-    assert result["status"] == "ok"
-    assert "timestamp" in result
-    assert "1" in result["monitors"]
+    meta, images = _parse_screenshot_result(result)
+    assert meta["status"] == "ok"
+    assert "timestamp" in meta
+    assert "1" in meta["monitors"]
+    assert len(images) == 1
+    assert images[0].mimeType == "image/png"
 
 
 def test_screenshot_specific_monitor():
@@ -163,11 +202,13 @@ def test_screenshot_specific_monitor():
     with patch("carrot_mcp_sys.server.mss.mss", return_value=_mock_sct_cm(mock_sct)):
         result = screenshot(monitor=2)
 
-    assert result["status"] == "ok"
-    assert "2" in result["monitors"]
-    monitor_info = result["monitors"]["2"]["monitor"]
+    meta, images = _parse_screenshot_result(result)
+    assert meta["status"] == "ok"
+    assert "2" in meta["monitors"]
+    monitor_info = meta["monitors"]["2"]["monitor"]
     assert monitor_info["index"] == 2
     assert monitor_info["left"] == 1920
+    assert len(images) == 1
 
 
 def test_screenshot_absolute_region_on_monitor():
@@ -180,8 +221,9 @@ def test_screenshot_absolute_region_on_monitor():
     with patch("carrot_mcp_sys.server.mss.mss", return_value=_mock_sct_cm(mock_sct)):
         result = screenshot(monitor=1, left=100, top=50, width=400, height=300)
 
-    assert result["status"] == "ok"
-    monitor_data = result["monitors"]["1"]
+    meta, images = _parse_screenshot_result(result)
+    assert meta["status"] == "ok"
+    monitor_data = meta["monitors"]["1"]
     assert monitor_data["width"] == 400
     assert monitor_data["height"] == 300
     assert monitor_data["origin"]["left"] == 100
@@ -203,8 +245,9 @@ def test_screenshot_absolute_region_no_monitor():
     with patch("carrot_mcp_sys.server.mss.mss", return_value=_mock_sct_cm(mock_sct)):
         result = screenshot(left=1920, top=100, width=400, height=300)
 
-    assert result["status"] == "ok"
-    assert "0" in result["monitors"]
+    meta, images = _parse_screenshot_result(result)
+    assert meta["status"] == "ok"
+    assert "0" in meta["monitors"]
     region = mock_sct.grab.call_args[0][0]
     assert region["left"] == 1920
     assert region["top"] == 100
@@ -219,8 +262,9 @@ def test_screenshot_save_path(tmp_path):
     with patch("carrot_mcp_sys.server.mss.mss", return_value=_mock_sct_cm(mock_sct)):
         result = screenshot(monitor=1, save_path=save_file)
 
-    assert result["status"] == "ok"
-    assert result["monitors"]["1"]["saved_to"] == save_file
+    meta, images = _parse_screenshot_result(result)
+    assert meta["status"] == "ok"
+    assert meta["monitors"]["1"]["saved_to"] == save_file
     assert (tmp_path / "sub" / "shot.png").exists()
 
 
@@ -231,7 +275,8 @@ def test_screenshot_timestamp_format():
     with patch("carrot_mcp_sys.server.mss.mss", return_value=_mock_sct_cm(mock_sct)):
         result = screenshot(monitor=1)
 
-    ts = result["timestamp"]
+    meta, _ = _parse_screenshot_result(result)
+    ts = meta["timestamp"]
     assert ts.endswith("Z") or "+" in ts
     assert "T" in ts
 
@@ -251,20 +296,35 @@ def test_screenshot_full_monitor_uses_monitor_bounds():
     assert region["height"] == 1440
 
 
+def test_screenshot_returns_image_content_types():
+    """Verify return is list of TextContent + ImageContent."""
+    mock_sct = _mock_mss_instance()
+    mock_sct.grab.return_value = _mock_grab_result()
+
+    with patch("carrot_mcp_sys.server.mss.mss", return_value=_mock_sct_cm(mock_sct)):
+        result = screenshot(monitor=1)
+
+    assert isinstance(result, list)
+    assert len(result) == 2
+    assert isinstance(result[0], TextContent)
+    assert isinstance(result[1], ImageContent)
+    assert result[1].mimeType == "image/png"
+    assert len(result[1].data) > 0
+
+
 # ── _grab ────────────────────────────────────────────────────────────────────
 
-def test_grab_returns_image_block():
+def test_grab_returns_meta_and_png():
     mock_sct = MagicMock()
     shot = _mock_grab_result()
     mock_sct.grab.return_value = shot
 
-    result = _grab(mock_sct, {"left": 0, "top": 0, "width": 100, "height": 100})
+    meta, png_data = _grab(mock_sct, {"left": 0, "top": 0, "width": 100, "height": 100})
 
-    assert result["width"] == 1920
-    assert result["height"] == 1080
-    assert result["origin"] == {"left": 0, "top": 0}
-    assert "bytes" in result
-    img = result["image"]
-    assert img["type"] == "image"
-    assert img["base64"].startswith("data:image/png;base64,")
-    assert img["mime"] == "image/png"
+    assert meta["width"] == 1920
+    assert meta["height"] == 1080
+    assert meta["origin"] == {"left": 0, "top": 0}
+    assert "bytes" in meta
+    assert "image" not in meta
+    assert isinstance(png_data, bytes)
+    assert len(png_data) > 0

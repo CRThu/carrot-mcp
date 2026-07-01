@@ -1,6 +1,7 @@
 """Carrot MCP System Server - screenshot, keyboard, app launcher"""
 
 import base64
+import json
 import os
 from datetime import datetime, timezone
 from importlib.metadata import version as pkg_version
@@ -9,6 +10,7 @@ from typing import Optional
 import mss
 import mss.tools
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ImageContent, TextContent
 
 mcp = FastMCP("carrot-mcp-sys")
 
@@ -48,26 +50,24 @@ def list_monitors() -> dict:
     return {"status": "ok", "monitors": monitors}
 
 
-def _grab(sct: mss.mss, region: dict, save_path: Optional[str] = None) -> dict:
+def _grab(sct: mss.mss, region: dict, save_path: Optional[str] = None) -> tuple[dict, bytes]:
     shot = sct.grab(region)
     png_data = mss.tools.to_png(shot.rgb, shot.size)
-    b64 = base64.b64encode(png_data).decode()
 
-    result = {
+    meta = {
         "width": shot.size[0],
         "height": shot.size[1],
         "origin": {"left": region["left"], "top": region["top"]},
         "bytes": len(png_data),
-        "image": {"type": "image", "base64": f"data:image/png;base64,{b64}", "mime": "image/png"},
     }
 
     if save_path:
         os.makedirs(os.path.dirname(save_path) or ".", exist_ok=True)
         with open(save_path, "wb") as f:
             f.write(png_data)
-        result["saved_to"] = save_path
+        meta["saved_to"] = save_path
 
-    return result
+    return meta, png_data
 
 
 @mcp.tool()
@@ -78,53 +78,25 @@ def screenshot(
     width: Optional[int] = None,
     height: Optional[int] = None,
     save_path: Optional[str] = None,
-) -> dict:
+) -> list:
     """Capture a screenshot for multimodal analysis.
 
-    ## Coordinate system
-
-    All coordinates are **absolute screen pixels** with origin (0,0) at the
-    top-left corner of the virtual screen. Use `list_monitors` to discover
-    each monitor's position.
-
-    Typical dual-monitor layout:
-        Monitor 1 (left):  left=0,    top=0, width=1920, height=1080
-        Monitor 2 (right): left=1920, top=0, width=2560, height=1440
-
-    ## Usage
-
-    - `screenshot()` — capture all monitors (one image per monitor)
-    - `screenshot(monitor=1)` — capture full screen of monitor 1
-    - `screenshot(left=100, top=50, width=800, height=600)` — capture absolute region
-    - `screenshot(monitor=2, left=2000, top=100, width=400, height=300)` — capture absolute region, result attributed to monitor 2
-
     Args:
-        monitor: Monitor index (1-based). Convenience shortcut to capture a full
-            monitor without specifying its bounds. Also used to attribute a region
-            capture to a specific monitor in the result. When omitted with a
-            single-monitor system, automatically uses monitor 1.
-        left: X coordinate of the capture region's left edge in absolute screen pixels.
-        top: Y coordinate of the capture region's top edge in absolute screen pixels.
-        width: Width of the capture region in pixels. Must be positive.
-        height: Height of the capture region in pixels. Must be positive.
-        save_path: Optional file path to save the PNG image. Ignored when
-            capturing all monitors simultaneously.
+        monitor: 1-based monitor index. Use `list_monitors` to discover available monitors.
+                 If omitted with single-monitor system, auto-selects monitor 1.
+        left, top, width, height: Region coordinates in absolute screen pixels.
+                                  Must all be provided together. If omitted, captures full monitor.
+        save_path: Optional file path to save the PNG image.
 
     Returns:
-        status: "ok" or "error"
-        timestamp: UTC ISO-8601 timestamp of the capture
-        monitors: Dict keyed by monitor index, each containing:
-            - width, height: Captured image dimensions
-            - origin: The absolute screen position captured {"left": N, "top": N}
-            - bytes: PNG file size in bytes
-            - image: MCP image block {"type": "image", "base64": "data:image/png;base64,..."}
-            - saved_to: File path (when save_path was provided)
+        list[TextContent | ImageContent] — first element is JSON metadata (status, timestamp,
+        per-monitor dimensions/origin), followed by one ImageContent per captured monitor.
     """
     has_region = any(v is not None for v in (left, top, width, height))
     if has_region and not all(v is not None for v in (left, top, width, height)):
-        return {"status": "error", "error": "left, top, width, height must all be provided together"}
+        return [TextContent(type="text", text=json.dumps({"status": "error", "error": "left, top, width, height must all be provided together"}))]
     if has_region and (width is None or height is None or width <= 0 or height <= 0):
-        return {"status": "error", "error": "Width and height must be positive"}
+        return [TextContent(type="text", text=json.dumps({"status": "error", "error": "Width and height must be positive"}))]
 
     timestamp = datetime.now(timezone.utc).isoformat()
 
@@ -135,9 +107,11 @@ def screenshot(
         if num_monitors == 1 and monitor is None and not has_region:
             monitor = 1
 
+        captures: list[tuple[str, dict, bytes]] = []
+
         if monitor is not None:
             if monitor < 1 or monitor >= len(monitors):
-                return {"status": "error", "error": f"Invalid monitor index {monitor}, available: 1-{len(monitors)-1}"}
+                return [TextContent(type="text", text=json.dumps({"status": "error", "error": f"Invalid monitor index {monitor}, available: 1-{len(monitors)-1}"}))]
             mon = monitors[monitor]
 
             if has_region:
@@ -145,37 +119,42 @@ def screenshot(
             else:
                 region = mon
 
-            shot = _grab(sct, region, save_path)
-            shot["monitor"] = {
+            meta, png_data = _grab(sct, region, save_path)
+            meta["monitor"] = {
                 "index": monitor,
                 "left": mon["left"],
                 "top": mon["top"],
                 "width": mon["width"],
                 "height": mon["height"],
             }
-            return {
-                "status": "ok",
-                "timestamp": timestamp,
-                "monitors": {str(monitor): shot},
-            }
+            captures.append((str(monitor), meta, png_data))
 
-        if has_region:
+        elif has_region:
             region = {"left": left, "top": top, "width": width, "height": height}
-            return {
+            meta, png_data = _grab(sct, region, save_path)
+            captures.append(("0", meta, png_data))
+
+        else:
+            for i in range(1, len(monitors)):
+                meta, png_data = _grab(sct, monitors[i])
+                captures.append((str(i), meta, png_data))
+
+        monitors_dict = {key: meta for key, meta, _ in captures}
+        content: list = [
+            TextContent(type="text", text=json.dumps({
                 "status": "ok",
                 "timestamp": timestamp,
-                "monitors": {"0": _grab(sct, region, save_path)},
-            }
+                "monitors": monitors_dict,
+            })),
+        ]
+        for key, _, png_data in captures:
+            content.append(ImageContent(
+                type="image",
+                data=base64.b64encode(png_data).decode(),
+                mimeType="image/png",
+            ))
 
-        result_monitors = {}
-        for i in range(1, len(monitors)):
-            result_monitors[str(i)] = _grab(sct, monitors[i])
-
-        return {
-            "status": "ok",
-            "timestamp": timestamp,
-            "monitors": result_monitors,
-        }
+        return content
 
 
 def main():

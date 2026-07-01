@@ -246,7 +246,7 @@ Hardware Layer (PN532 / CLRC663 via serial)
 |------|-------------|
 | `version` | Get server version info |
 | `list_monitors` | List all available monitors with coordinates and resolution |
-| `screenshot` | Capture screenshot(s) - supports monitor index, region coordinates, or all monitors |
+| `screenshot` | Capture screenshot(s). Args: `monitor` (1-based index, optional), `left`/`top`/`width`/`height` (region coords), `save_path` (file output). Returns `list[TextContent \| ImageContent]` — JSON metadata + PNG images as attachments |
 
 ### Architecture
 
@@ -262,8 +262,8 @@ Hardware Layer (display output)
 - `list_monitors` skips index 0 (virtual combined screen), returns 1-based indices
 - `screenshot(monitor=N)` captures full monitor; region coordinates are absolute (no offset needed)
 - Single-monitor systems auto-select monitor when no args provided
-- Returns images as MCP-compatible dicts: `{"type": "image", "base64": "data:image/png;base64,...", "mime": "image/png"}`
-- Each monitor returned as separate dict entry for independent LLM processing
+- Returns `list[TextContent | ImageContent]` — metadata in TextContent (JSON), images as separate ImageContent attachments via MCP content channel (avoids base64-in-JSON truncation)
+- Each monitor returned as separate ImageContent entry
 - Optional `save_path` for saving to file
 
 ## Adding a New MCP Server
