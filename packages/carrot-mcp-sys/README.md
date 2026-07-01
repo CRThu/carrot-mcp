@@ -71,20 +71,34 @@ Use `list_monitors` to discover each monitor's position.
 
 ## Output format
 
-Each monitor capture returns:
+Returns `list[TextContent | ImageContent]`:
+- First element: JSON metadata with `status`, `timestamp`, and `monitors` dict (keyed by monitor index)
+- Remaining elements: One `ImageContent` per captured monitor (PNG image)
+
+Example response structure:
 ```json
-{
-  "width": 1920,
-  "height": 1080,
-  "origin": {"left": 0, "top": 0},
-  "bytes": 524288,
-  "image": {
-    "type": "image",
-    "base64": "data:image/png;base64,...",
-    "mime": "image/png"
+[
+  {
+    "type": "text",
+    "text": {
+      "status": "ok",
+      "timestamp": "2026-07-01T07:38:55.105440+00:00",
+      "monitors": {
+        "1": {
+          "width": 1920, "height": 1080,
+          "origin": {"left": 0, "top": 0},
+          "bytes": 120887,
+          "monitor": {"index": 1, "left": 0, "top": 0, "width": 1920, "height": 1080}
+        }
+      }
+    }
   },
-  "monitor": {"index": 1, "left": 0, "top": 0, "width": 1920, "height": 1080}
-}
+  {
+    "type": "image",
+    "data": "<base64 PNG>",
+    "mimeType": "image/png"
+  }
+]
 ```
 
 ## Dependencies

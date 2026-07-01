@@ -262,7 +262,7 @@ Hardware Layer (display output)
 ```
 
 - All coordinates are **absolute screen pixels** (origin at top-left of virtual screen)
-- `list_monitors` skips index 0 (virtual combined screen), returns 1-based indices
+- `list_monitors` skips index 0 (virtual combined screen), returns 1-based indices in array format `[{index, left, top, width, height}]`
 - `screenshot(monitor=N)` captures full monitor; region coordinates are absolute (no offset needed)
 - Single-monitor systems auto-select monitor when no args provided
 - Returns `list[TextContent | ImageContent]` — metadata in TextContent (JSON), images as separate ImageContent attachments via MCP content channel (avoids base64-in-JSON truncation)
