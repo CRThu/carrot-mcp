@@ -1,5 +1,6 @@
 """Carrot MCP PDF Server"""
 
+import base64
 import json
 import os
 import sys
@@ -11,6 +12,7 @@ from importlib.metadata import version as pkg_version
 import pymupdf
 import pymupdf4llm
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ImageContent, TextContent
 
 from carrot_mcp_pdf.cache import (
     load_cache,
@@ -104,38 +106,39 @@ def get_toc(pdf_path: str) -> dict:
 
 
 @mcp.tool()
-def get_pages(pdf_path: str, pages: str, multimodal: bool = True, force_ocr: bool = False) -> dict:
+def get_pages(pdf_path: str, pages: str, multimodal: bool = True, force_ocr: bool = False) -> list:
     """Convert specific PDF pages to markdown.
 
     Args:
         pdf_path: Path to the PDF file.
         pages: Page range string, e.g. '1-5,8,10-12'.
-        multimodal: If True, return images as base64 that you can analyze.
+        multimodal: If True, return images as attachments you can analyze.
                     If False, return OCR text of images.
         force_ocr: Render entire page as image and OCR it. Use when normal conversion
                    produces garbled text or missing content (e.g. scanned PDFs).
                    Sets PDF-level flag so future requests also use OCR.
 
     Returns:
-        {status, pages: {page_num: {content: [...]}}, total_pages}
+        list[TextContent | ImageContent] — first element is JSON metadata (status, total_pages),
+        followed by page content as TextContent blocks and images as ImageContent attachments.
     """
     if not os.path.exists(pdf_path):
-        return {"status": "error", "message": f"File not found: {pdf_path}"}
+        return [TextContent(type="text", text=json.dumps({"status": "error", "message": f"File not found: {pdf_path}"}))]
 
     try:
         page_list = parse_page_range(pages)
     except ValueError as e:
-        return {"status": "error", "message": f"Invalid page range: {e}"}
+        return [TextContent(type="text", text=json.dumps({"status": "error", "message": f"Invalid page range: {e}"}))]
 
     cache = load_cache(pdf_path)
     total_pages = get_total_pages(pdf_path, cache)
 
     out_of_range = [p for p in page_list if p > total_pages]
     if out_of_range:
-        return {
+        return [TextContent(type="text", text=json.dumps({
             "status": "error",
             "message": f"Pages out of range (total {total_pages}): {out_of_range}",
-        }
+        }))]
 
     if force_ocr:
         if not cache.get("force_ocr"):
@@ -173,14 +176,16 @@ def get_pages(pdf_path: str, pages: str, multimodal: bool = True, force_ocr: boo
                         use_ocr=False,
                     )
                 except Exception as e:
-                    return {"status": "error", "message": f"Conversion failed: {e}"}
+                    return [TextContent(type="text", text=json.dumps({"status": "error", "message": f"Conversion failed: {e}"}))]
 
-                if isinstance(page_chunks, dict):
+                if isinstance(page_chunks, str):
+                    page_chunks = [{"text": page_chunks, "metadata": {}}]
+                elif isinstance(page_chunks, dict):
                     page_chunks = [page_chunks]
 
                 for i, chunk in enumerate(page_chunks):
                     page_num = uncached[i] if i < len(uncached) else chunk.get("metadata", {}).get("page", i + 1)
-                    text = chunk.get("text", "")
+                    text = chunk.get("text", "") if isinstance(chunk, dict) else str(chunk)
                     content, ocr_content = parse_page_content(text, image_dir)
                     cached_pages[str(page_num)] = {
                         "content": content,
@@ -191,28 +196,52 @@ def get_pages(pdf_path: str, pages: str, multimodal: bool = True, force_ocr: boo
         save_cache(pdf_path, cache)
 
     use_ocr = not multimodal or cache.get("force_ocr")
-    result_pages = {}
+    result: list = [
+        TextContent(type="text", text=json.dumps({
+            "status": "ok",
+            "total_pages": total_pages,
+            "pages": [str(p) for p in page_list],
+        })),
+    ]
+
     for p in page_list:
         page_data = cached_pages.get(str(p))
-        if page_data:
-            if use_ocr and "ocr_content" in page_data:
-                result_pages[str(p)] = {"content": page_data["ocr_content"]}
-            else:
-                result_pages[str(p)] = {"content": page_data["content"]}
+        if not page_data:
+            continue
 
-    return {
-        "status": "ok",
-        "pages": result_pages,
-        "total_pages": total_pages,
-    }
+        blocks = page_data["ocr_content"] if use_ocr and "ocr_content" in page_data else page_data["content"]
+        result.append(TextContent(type="text", text=f"[Page {p}]"))
+        img_idx = 0
+        for block in blocks:
+            if block["type"] == "text":
+                result.append(TextContent(type="text", text=block["data"]))
+            elif block["type"] == "image":
+                img_bytes = block["data"]
+                if isinstance(img_bytes, str):
+                    img_bytes = base64.b64decode(img_bytes.split(",")[-1]) if "," in img_bytes else base64.b64decode(img_bytes)
+                result.append(ImageContent(
+                    type="image",
+                    data=base64.b64encode(img_bytes).decode(),
+                    mimeType=block.get("mime", "image/png"),
+                    context=f"Page {p}, image {img_idx}",
+                ))
+                img_idx += 1
+
+    return result
 
 
 def _convert_all(pdf_path: str, task_id: str, multimodal: bool, force_ocr: bool = False):
     """Background thread: convert all pages of a PDF and update task progress.
 
     Runs in a daemon thread started by create_task. Each page is converted
-    individually and cached to disk as it completes. Failed pages are not cached.
+    individually and cached to disk as it completes.
+    - to_markdown (offline): fail immediately on error
+    - ocr_page (API call): retry with exponential backoff (1s, 2s, 4s, 8s, 16s)
+    On restart, skips already-cached pages (resume from last success).
+    Completed tasks auto-delete from tasks.json; failed tasks retained for debugging.
     """
+    import time as _time
+
     cache = load_cache(pdf_path)
     total_pages = get_total_pages(pdf_path, cache)
 
@@ -227,6 +256,7 @@ def _convert_all(pdf_path: str, task_id: str, multimodal: bool, force_ocr: bool 
         return
 
     cached_pages = cache.get("pages", {})
+    MAX_OCR_RETRIES = 5
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         image_dir = os.path.join(tmp_dir, "images")
@@ -241,7 +271,20 @@ def _convert_all(pdf_path: str, task_id: str, multimodal: bool, force_ocr: bool 
 
             try:
                 if force_ocr:
-                    content = ocr_page(pdf_path, page_num)
+                    content = None
+                    for attempt in range(MAX_OCR_RETRIES):
+                        try:
+                            content = ocr_page(pdf_path, page_num)
+                            break
+                        except Exception as e:
+                            import sys
+                            wait = 2 ** attempt
+                            print(f"[carrot-mcp-pdf] OCR page {page_num} attempt {attempt+1}/{MAX_OCR_RETRIES}: {e}", file=sys.stderr)
+                            if attempt < MAX_OCR_RETRIES - 1:
+                                print(f"[carrot-mcp-pdf] retrying in {wait}s...", file=sys.stderr)
+                                _time.sleep(wait)
+                            else:
+                                raise
                     cached_pages[str(page_num)] = {
                         "content": content,
                         "ocr_content": content,
@@ -256,9 +299,11 @@ def _convert_all(pdf_path: str, task_id: str, multimodal: bool, force_ocr: bool 
                         footer=False,
                         use_ocr=False,
                     )
-                    if isinstance(chunk, list):
-                        chunk = chunk[0] if chunk else {}
-                    text = chunk.get("text", "")
+                    if isinstance(chunk, str):
+                        chunk = {"text": chunk, "metadata": {}}
+                    elif isinstance(chunk, list):
+                        chunk = chunk[0] if chunk else {"text": "", "metadata": {}}
+                    text = chunk.get("text", "") if isinstance(chunk, dict) else str(chunk)
                     content, ocr_content = parse_page_content(text, image_dir)
                     cached_pages[str(page_num)] = {
                         "content": content,
@@ -267,15 +312,24 @@ def _convert_all(pdf_path: str, task_id: str, multimodal: bool, force_ocr: bool 
 
                 cache["pages"] = cached_pages
                 save_cache(pdf_path, cache)
-            except Exception:
-                pass
+            except Exception as e:
+                import sys
+                print(f"[carrot-mcp-pdf] page {page_num} failed, stopping: {e}", file=sys.stderr)
+                break
 
             tasks[task_id]["current_page"] = page_num
             tasks[task_id]["progress_percent"] = int(page_num / total_pages * 100)
             save_tasks(pdf_path, tasks)
 
-    tasks[task_id]["status"] = "completed"
-    tasks[task_id]["progress_percent"] = 100
+    cached_count = len(cache.get("pages", {}))
+    is_completed = cached_count == total_pages
+    if is_completed:
+        del tasks[task_id]
+    else:
+        tasks[task_id]["status"] = "failed"
+        tasks[task_id]["progress_percent"] = int(cached_count / total_pages * 100) if total_pages > 0 else 0
+        tasks[task_id]["cached_pages"] = cached_count
+        tasks[task_id]["failed_at_page"] = cached_count + 1 if cached_count < total_pages else None
     save_tasks(pdf_path, tasks)
 
 
@@ -285,7 +339,8 @@ def create_task(pdf_path: str, multimodal: bool = True, force_ocr: bool = False)
 
     Args:
         pdf_path: Path to the PDF file.
-        multimodal: If True, include images as base64. If False, run OCR on images.
+        multimodal: If True, return images as MCP ImageContent attachments.
+                    If False, run OCR on images and return text.
         force_ocr: Render entire page as image and OCR it. Use when normal conversion
                    produces garbled text or missing content (e.g. scanned PDFs).
                    Sets PDF-level flag so future requests also use OCR.
@@ -351,7 +406,8 @@ def get_status(task_id: str) -> dict:
         task_id: The task ID returned by create_task.
 
     Returns:
-        {status, task_id, conversion_status, progress_percent, current_page, total_pages}
+        {status, task_id, conversion_status, progress_percent, current_page, total_pages,
+         cached_pages, failed_at_page, start_time}
     """
     task = _find_task_in_files(task_id)
     if task is None:
@@ -364,6 +420,8 @@ def get_status(task_id: str) -> dict:
         "progress_percent": task.get("progress_percent", 0),
         "current_page": task.get("current_page", 0),
         "total_pages": task.get("total_pages", 0),
+        "cached_pages": task.get("cached_pages", 0),
+        "failed_at_page": task.get("failed_at_page"),
         "start_time": task.get("start_time", ""),
     }
 

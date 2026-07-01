@@ -38,13 +38,13 @@ def vlm_configured() -> bool:
     return bool(VISION_MODEL and VISION_API_KEY)
 
 
-def read_image_as_base64(image_path: str) -> tuple[str, str]:
-    """Read an image file and return (data_uri, mime_type) for embedding in markdown."""
+def read_image(image_path: str) -> tuple[bytes, str]:
+    """Read an image file and return (raw_bytes, mime_type)."""
     ext = os.path.splitext(image_path)[1].lower()
     mime = _MIME_MAP.get(ext, "image/jpeg")
     with open(image_path, "rb") as f:
-        b64 = base64.b64encode(f.read()).decode()
-    return f"data:{mime};base64,{b64}", mime
+        data = f.read()
+    return data, mime
 
 
 def render_page_as_image(pdf_path: str, page_num: int, dpi: int = 300) -> str:
@@ -88,10 +88,12 @@ def parse_page_content(text: str, image_dir: str) -> tuple[list[dict], list[dict
     """Parse pymupdf4llm markdown output into ordered content blocks.
 
     Returns tuple of (content, ocr_content):
-    - content: blocks with images as base64 (for multimodal=True)
+    - content: blocks with images as raw bytes (for multimodal=True → ImageContent)
     - ocr_content: blocks with images replaced by OCR text (for multimodal=False)
 
     data: URI images are skipped (already inline).
+    Image blocks: {"type": "image", "data": bytes, "mime": str}
+    Text blocks: {"type": "text", "data": str}
     """
     content = []
     ocr_content = []
@@ -112,8 +114,8 @@ def parse_page_content(text: str, image_dir: str) -> tuple[list[dict], list[dict
 
         img_path = os.path.join(image_dir, os.path.basename(img_ref))
         if os.path.exists(img_path):
-            data_uri, mime = read_image_as_base64(img_path)
-            content.append({"type": "image", "base64": data_uri, "mime": mime})
+            img_bytes, mime = read_image(img_path)
+            content.append({"type": "image", "data": img_bytes, "mime": mime})
 
             if vlm_configured():
                 try:
@@ -127,8 +129,8 @@ def parse_page_content(text: str, image_dir: str) -> tuple[list[dict], list[dict
                     raise RuntimeError(f"Image OCR failed: {e}") from e
                 ocr_content.append({"type": "text", "data": ocr_result})
             else:
-                ocr_content.append({"type": "image", "base64": data_uri, "mime": mime})
-                ocr_content.append({"type": "text", "data": "[VLM model not configured, returning image as base64]"})
+                ocr_content.append({"type": "image", "data": img_bytes, "mime": mime})
+                ocr_content.append({"type": "text", "data": "[VLM model not configured, returning image as attachment]"})
 
     remaining = text[last_end:].strip()
     if remaining:

@@ -6,38 +6,40 @@ from carrot_mcp_pdf.converter import (
     get_total_pages,
     ocr_page,
     parse_page_content,
-    read_image_as_base64,
+    read_image,
     render_page_as_image,
     resolve_multimodal,
     vlm_configured,
 )
 
 
-# ── read_image_as_base64 ─────────────────────────────────────────────────────
+# ── read_image ───────────────────────────────────────────────────────────────
 
-def test_read_image_as_base64(tmp_path):
+def test_read_image(tmp_path):
     img = tmp_path / "test.png"
     img.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100)
 
-    data_uri, mime = read_image_as_base64(str(img))
-    assert data_uri.startswith("data:image/png;base64,")
+    data, mime = read_image(str(img))
+    assert isinstance(data, bytes)
+    assert data.startswith(b"\x89PNG")
     assert mime == "image/png"
 
 
-def test_read_image_as_base64_jpeg(tmp_path):
+def test_read_image_jpeg(tmp_path):
     img = tmp_path / "photo.jpg"
     img.write_bytes(b"\xff\xd8\xff" + b"\x00" * 100)
 
-    data_uri, mime = read_image_as_base64(str(img))
-    assert "image/jpeg" in data_uri
+    data, mime = read_image(str(img))
+    assert isinstance(data, bytes)
+    assert data.startswith(b"\xff\xd8\xff")
     assert mime == "image/jpeg"
 
 
-def test_read_image_as_base64_unknown_ext(tmp_path):
+def test_read_image_unknown_ext(tmp_path):
     img = tmp_path / "img.xyz"
     img.write_bytes(b"\x00" * 100)
 
-    _, mime = read_image_as_base64(str(img))
+    _, mime = read_image(str(img))
     assert mime == "image/jpeg"  # default
 
 
@@ -79,7 +81,8 @@ def test_parse_page_content_with_image_multimodal(tmp_path):
     assert len(content) == 3
     assert content[0]["type"] == "text"
     assert content[1]["type"] == "image"
-    assert "base64" in content[1]
+    assert isinstance(content[1]["data"], bytes)
+    assert content[1]["mime"] == "image/png"
     assert content[2]["type"] == "text"
 
 
@@ -127,14 +130,14 @@ def test_parse_page_content_vlm_not_configured_fallback(tmp_path):
     assert len(content) == 3
     assert content[0] == {"type": "text", "data": "See"}
     assert content[1]["type"] == "image"
-    assert "base64" in content[1]
+    assert isinstance(content[1]["data"], bytes)
     assert content[2] == {"type": "text", "data": "above"}
 
     assert len(ocr_content) == 4
     assert ocr_content[0] == {"type": "text", "data": "See"}
     assert ocr_content[1]["type"] == "image"
-    assert "base64" in ocr_content[1]
-    assert ocr_content[2] == {"type": "text", "data": "[VLM model not configured, returning image as base64]"}
+    assert isinstance(ocr_content[1]["data"], bytes)
+    assert ocr_content[2] == {"type": "text", "data": "[VLM model not configured, returning image as attachment]"}
     assert ocr_content[3] == {"type": "text", "data": "above"}
 
 

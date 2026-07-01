@@ -1,7 +1,11 @@
 """Tests for carrot_mcp_pdf.server module."""
 
+import base64
 import inspect
+import json
 from unittest.mock import MagicMock, patch
+
+from mcp.types import ImageContent, TextContent
 
 from carrot_mcp_pdf.server import (
     create_task,
@@ -118,15 +122,23 @@ def test_get_toc_no_toc(tmp_path):
 
 # ── get_pages ────────────────────────────────────────────────────────────────
 
+def _parse_result(result: list):
+    """Helper to parse get_pages result into (meta_dict, content_blocks)."""
+    meta = json.loads(result[0].text)
+    return meta, result[1:]
+
+
 def test_get_pages_file_not_found():
     result = get_pages("nonexistent.pdf", "1-5")
-    assert result["status"] == "error"
-    assert "not found" in result["message"].lower()
+    meta, _ = _parse_result(result)
+    assert meta["status"] == "error"
+    assert "not found" in meta["message"].lower()
 
 
 def test_get_pages_invalid_range():
     result = get_pages("nonexistent.pdf", "invalid")
-    assert result["status"] == "error"
+    meta, _ = _parse_result(result)
+    assert meta["status"] == "error"
 
 
 def test_get_pages_out_of_range(tmp_path):
@@ -137,15 +149,17 @@ def test_get_pages_out_of_range(tmp_path):
         with patch("carrot_mcp_pdf.server.load_cache", return_value={"pages": {}}):
             result = get_pages(str(pdf), "1-5")
 
-    assert result["status"] == "error"
-    assert "out of range" in result["message"].lower()
+    meta, _ = _parse_result(result)
+    assert meta["status"] == "error"
+    assert "out of range" in meta["message"].lower()
 
 
 def test_get_pages_negative_page_range(tmp_path):
     pdf = tmp_path / "test.pdf"
     pdf.write_bytes(b"fake pdf")
     result = get_pages(str(pdf), "0")
-    assert result["status"] == "error"
+    meta, _ = _parse_result(result)
+    assert meta["status"] == "error"
 
 
 def test_get_pages_from_cache(tmp_path):
@@ -162,8 +176,12 @@ def test_get_pages_from_cache(tmp_path):
          patch("carrot_mcp_pdf.server.load_cache", return_value=cached):
         result = get_pages(str(pdf), "1", multimodal=True)
 
-    assert result["status"] == "ok"
-    assert result["pages"]["1"]["content"] == [{"type": "text", "data": "cached"}]
+    meta, blocks = _parse_result(result)
+    assert meta["status"] == "ok"
+    assert isinstance(blocks[0], TextContent)
+    assert blocks[0].text == "[Page 1]"
+    assert isinstance(blocks[1], TextContent)
+    assert blocks[1].text == "cached"
 
 
 def test_get_pages_multimodal_false_returns_ocr(tmp_path):
@@ -180,8 +198,76 @@ def test_get_pages_multimodal_false_returns_ocr(tmp_path):
          patch("carrot_mcp_pdf.server.load_cache", return_value=cached):
         result = get_pages(str(pdf), "1", multimodal=False)
 
-    assert result["status"] == "ok"
-    assert result["pages"]["1"]["content"] == [{"type": "text", "data": "ocr text"}]
+    meta, blocks = _parse_result(result)
+    assert meta["status"] == "ok"
+    assert blocks[0].text == "[Page 1]"
+    assert blocks[1].text == "ocr text"
+
+
+def test_get_pages_image_returns_image_content(tmp_path):
+    pdf = tmp_path / "test.pdf"
+    pdf.write_bytes(b"fake pdf")
+
+    img_bytes = b"\x89PNG\r\n\x1a\n"
+    cached = {
+        "pages": {
+            "1": {"content": [
+                {"type": "text", "data": "before"},
+                {"type": "image", "data": img_bytes, "mime": "image/png"},
+                {"type": "text", "data": "after"},
+            ], "ocr_content": [{"type": "text", "data": "ocr text"}]},
+        }
+    }
+
+    with patch("carrot_mcp_pdf.server.get_total_pages", return_value=3), \
+         patch("carrot_mcp_pdf.server.load_cache", return_value=cached):
+        result = get_pages(str(pdf), "1", multimodal=True)
+
+    meta, blocks = _parse_result(result)
+    assert meta["status"] == "ok"
+    assert len(blocks) == 4
+    assert isinstance(blocks[0], TextContent)
+    assert blocks[0].text == "[Page 1]"
+    assert isinstance(blocks[1], TextContent)
+    assert blocks[1].text == "before"
+    assert isinstance(blocks[2], ImageContent)
+    assert blocks[2].mimeType == "image/png"
+    assert blocks[2].context == "Page 1, image 0"
+    assert base64.b64decode(blocks[2].data) == img_bytes
+    assert isinstance(blocks[3], TextContent)
+    assert blocks[3].text == "after"
+
+
+def test_get_pages_multiple_images_indexed(tmp_path):
+    pdf = tmp_path / "test.pdf"
+    pdf.write_bytes(b"fake pdf")
+
+    img1 = b"\x89PNG\r\n\x1a\n"
+    img2 = b"\x89PNG\r\n\x1a\n\x00"
+    cached = {
+        "pages": {
+            "1": {"content": [
+                {"type": "text", "data": "start"},
+                {"type": "image", "data": img1, "mime": "image/png"},
+                {"type": "text", "data": "middle"},
+                {"type": "image", "data": img2, "mime": "image/jpeg"},
+                {"type": "text", "data": "end"},
+            ], "ocr_content": [{"type": "text", "data": "ocr"}]},
+        }
+    }
+
+    with patch("carrot_mcp_pdf.server.get_total_pages", return_value=3), \
+         patch("carrot_mcp_pdf.server.load_cache", return_value=cached):
+        result = get_pages(str(pdf), "1", multimodal=True)
+
+    meta, blocks = _parse_result(result)
+    assert meta["status"] == "ok"
+    assert len(blocks) == 6
+    assert blocks[0].text == "[Page 1]"
+    assert blocks[2].context == "Page 1, image 0"
+    assert blocks[2].mimeType == "image/png"
+    assert blocks[4].context == "Page 1, image 1"
+    assert blocks[4].mimeType == "image/jpeg"
 
 
 def test_get_pages_force_ocr_returns_ocr_content(tmp_path):
@@ -199,8 +285,10 @@ def test_get_pages_force_ocr_returns_ocr_content(tmp_path):
          patch("carrot_mcp_pdf.server.load_cache", return_value=cached):
         result = get_pages(str(pdf), "1", multimodal=True)
 
-    assert result["status"] == "ok"
-    assert result["pages"]["1"]["content"] == [{"type": "text", "data": "ocr result"}]
+    meta, blocks = _parse_result(result)
+    assert meta["status"] == "ok"
+    assert blocks[0].text == "[Page 1]"
+    assert blocks[1].text == "ocr result"
 
 
 def test_get_pages_force_ocr_clears_cache(tmp_path):
@@ -220,7 +308,8 @@ def test_get_pages_force_ocr_clears_cache(tmp_path):
          patch("carrot_mcp_pdf.server.ocr_page", return_value=[{"type": "text", "data": "new ocr"}]):
         result = get_pages(str(pdf), "1", force_ocr=True)
 
-    assert result["status"] == "ok"
+    meta, blocks = _parse_result(result)
+    assert meta["status"] == "ok"
     saved_cache = mock_save.call_args[0][1]
     assert saved_cache["force_ocr"] is True
     assert saved_cache["pages"]["1"] == {"content": [{"type": "text", "data": "new ocr"}], "ocr_content": [{"type": "text", "data": "new ocr"}]}
@@ -242,8 +331,10 @@ def test_get_pages_force_ocr_preserves_cache_if_already_set(tmp_path):
          patch("carrot_mcp_pdf.server.save_cache"):
         result = get_pages(str(pdf), "1", force_ocr=True)
 
-    assert result["status"] == "ok"
-    assert result["pages"]["1"]["content"] == [{"type": "text", "data": "existing ocr"}]
+    meta, blocks = _parse_result(result)
+    assert meta["status"] == "ok"
+    assert blocks[0].text == "[Page 1]"
+    assert blocks[1].text == "existing ocr"
 
 
 # ── create_task ──────────────────────────────────────────────────────────────
@@ -278,6 +369,39 @@ def test_create_task_success(tmp_path):
     assert result["message"] == "Background conversion started"
 
 
+def test_get_pages_pymupdf4llm_returns_str(tmp_path):
+    """Test that get_pages handles pymupdf4llm.to_markdown() returning str."""
+    pdf = tmp_path / "test.pdf"
+    pdf.write_bytes(b"fake pdf")
+
+    with patch("carrot_mcp_pdf.server.get_total_pages", return_value=3), \
+         patch("carrot_mcp_pdf.server.load_cache", return_value={"pages": {}}), \
+         patch("carrot_mcp_pdf.server.save_cache"), \
+         patch("carrot_mcp_pdf.server.pymupdf4llm.to_markdown", return_value="Hello world"):
+        result = get_pages(str(pdf), "1")
+
+    meta, blocks = _parse_result(result)
+    assert meta["status"] == "ok"
+    assert blocks[0].text == "[Page 1]"
+    assert blocks[1].text == "Hello world"
+
+
+def test_get_pages_pymupdf4llm_returns_list(tmp_path):
+    """Test that get_pages handles pymupdf4llm.to_markdown() returning list[dict]."""
+    pdf = tmp_path / "test.pdf"
+    pdf.write_bytes(b"fake pdf")
+
+    with patch("carrot_mcp_pdf.server.get_total_pages", return_value=3), \
+         patch("carrot_mcp_pdf.server.load_cache", return_value={"pages": {}}), \
+         patch("carrot_mcp_pdf.server.save_cache"), \
+         patch("carrot_mcp_pdf.server.pymupdf4llm.to_markdown", return_value=[{"text": "Page content", "metadata": {}}]):
+        result = get_pages(str(pdf), "1")
+
+    meta, blocks = _parse_result(result)
+    assert meta["status"] == "ok"
+    assert blocks[1].text == "Page content"
+
+
 # ── get_status ───────────────────────────────────────────────────────────────
 
 def test_get_status_not_found():
@@ -295,6 +419,8 @@ def test_get_status_returns_all_fields(tmp_path):
         "progress_percent": 42,
         "current_page": 5,
         "total_pages": 10,
+        "cached_pages": 4,
+        "failed_at_page": 5,
         "start_time": "2025-01-01T00:00:00",
     }}
 
@@ -306,3 +432,29 @@ def test_get_status_returns_all_fields(tmp_path):
     assert result["progress_percent"] == 42
     assert result["current_page"] == 5
     assert result["total_pages"] == 10
+    assert result["cached_pages"] == 4
+    assert result["failed_at_page"] == 5
+
+
+# ── _convert_all task lifecycle ──────────────────────────────────────────────
+
+def test_convert_all_completed_deletes_task(tmp_path):
+    from carrot_mcp_pdf.server import _convert_all
+
+    pdf = tmp_path / "test.pdf"
+    pdf.write_bytes(b"fake pdf")
+    task_id = "abc123_1234"
+    tasks = {task_id: {"status": "running", "progress_percent": 0, "current_page": 0}}
+
+    with patch("carrot_mcp_pdf.server.load_cache", return_value={
+        "pages": {}, "force_ocr": True, "total_pages": 2,
+    }), \
+         patch("carrot_mcp_pdf.server.save_cache"), \
+         patch("carrot_mcp_pdf.server.load_tasks", return_value=tasks), \
+         patch("carrot_mcp_pdf.server.save_tasks") as mock_save, \
+         patch("carrot_mcp_pdf.server.get_total_pages", return_value=2), \
+         patch("carrot_mcp_pdf.server.ocr_page", return_value="ocr text"):
+        _convert_all(pdf, task_id, multimodal=True, force_ocr=True)
+
+    saved = mock_save.call_args[0][1]
+    assert task_id not in saved, "completed task should be deleted from tasks"

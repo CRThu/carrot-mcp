@@ -72,7 +72,7 @@ uv run python -m carrot_mcp_sys
 - Use type hints
 - Follow existing patterns in the codebase
 - Each MCP server follows the same structure: server.py with FastMCP
-- All tools return dict with `{"status": "ok"|"error", ...}` format
+- Tools return dict with `{"status": "ok"|"error", ...}` format, except tools that return images (use `list[TextContent | ImageContent]`)
 - Each server implements a `version` tool using `importlib.metadata.version`
 - Version is read from `pyproject.toml` — do NOT hardcode `__version__` in `__init__.py`
 - **Test directories must NOT have `__init__.py`** — it shadows the `serial` package from pyserial
@@ -158,7 +158,7 @@ Example:
 |------|-------------|
 | `version` | Get server version info |
 | `get_toc` | Get table of contents with page ranges |
-| `get_pages` | Convert specific pages to markdown (supports multimodal/OCR/force_ocr) |
+| `get_pages` | Convert specific pages to markdown (returns `list[TextContent \| ImageContent]`) |
 | `create_task` | Start background full PDF conversion (multimodal/force_ocr option) |
 | `get_status` | Check progress of background conversion task |
 
@@ -181,18 +181,21 @@ Cache Layer (cache.py — JSON: %APPDATA%/carrot-mcp/pdf/<hash>.json)
 
 - Cache: `%APPDATA%/carrot-mcp/pdf/<md5(pdf_path)>.json`
 - JSON structure: `{name, size, path, total_pages, force_ocr, toc, pages: {page_num: {content: [...], ocr_content: [...]}}}`
-- Content stored as ordered blocks: `[{type: "text", data: "..."}, {"type": "image", base64: "...", mime: "..."}]`
-- Each page caches **both** formats: `content` (base64 images) and `ocr_content` (OCR text)
-- `multimodal=True` returns `content`, `multimodal=False` returns `ocr_content`
+- Content stored as ordered blocks: `[{type: "text", data: "..."}, {"type": "image", data: bytes, mime: "..."}]`
+- Each page caches **both** formats: `content` (raw image bytes) and `ocr_content` (OCR text)
+- `get_pages` returns `list[TextContent | ImageContent]` — metadata in first TextContent, images as ImageContent attachments (no base64 truncation)
+- `multimodal=True` returns `content` with images as `ImageContent`, `multimodal=False` returns `ocr_content` as text
 - `force_ocr` is PDF-level flag (not per-page) — if a few pages are wrong, the whole PDF is likely wrong
 - When `force_ocr=True`: renders entire page as PNG image, calls OCR API, caches result; future requests also use OCR
 - Background conversion via `threading.Thread` with progress tracking in separate `<hash>_tasks.json`
+- Completed tasks auto-delete from tasks.json; failed tasks retained for debugging
+- On restart, `create_task` resumes by skipping already-cached pages
 
 **Environment variables:**
 - `CARROT_MCP_MODEL`: Vision model name (must be configured if using OCR)
 - `CARROT_MCP_APIKEY`: API key for the vision model (must be configured if using OCR)
 - `CARROT_MCP_PROXY`: HTTP proxy URL for API calls
-- `CARROT_MCP_FORCE_MULTIMODAL`: `true` = always return images as base64; `false` = always run OCR. When not set, uses tool parameter. If VLM not configured (no model/apikey), falls back to base64 with warning.
+- `CARROT_MCP_FORCE_MULTIMODAL`: `true` = always return images as attachments; `false` = always run OCR. When not set, uses tool parameter. If VLM not configured (no model/apikey), falls back to attachments with warning.
 
 ## NFC MCP Server Tools
 

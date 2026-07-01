@@ -49,9 +49,10 @@ Cache Layer (cache.py — JSON: %APPDATA%/carrot-mcp/pdf/<md5>.json)
 - **cache.py** — Cache/task persistence, path management, parse_page_range
 
 - **Cache**: `%APPDATA%/carrot-mcp/pdf/<md5>.json`
-- **Dual format**: each page caches both `content` (base64) and `ocr_content` (OCR text)
+- **Dual format**: each page caches both `content` (raw image bytes) and `ocr_content` (OCR text)
 - **Force OCR**: PDF-level flag — renders page as image and OCRs it; for scanned PDFs or garbled text
 - **Background tasks**: separate `<hash>_tasks.json` with progress tracking
+- **Image return**: images returned as MCP `ImageContent` attachments (no base64 truncation)
 
 ## Environment Variables
 
@@ -60,7 +61,7 @@ Cache Layer (cache.py — JSON: %APPDATA%/carrot-mcp/pdf/<md5>.json)
 | `CARROT_MCP_MODEL` | — | Vision model name for OCR (must be configured if using OCR) |
 | `CARROT_MCP_APIKEY` | — | API key for the vision model (must be configured if using OCR) |
 | `CARROT_MCP_PROXY` | — | HTTP proxy URL for API calls |
-| `CARROT_MCP_FORCE_MULTIMODAL` | — | `true` = always return images as base64; `false` = always run OCR. When not set, uses tool parameter. If VLM not configured (no model/apikey), falls back to base64 with warning. |
+| `CARROT_MCP_FORCE_MULTIMODAL` | — | `true` = always return images as MCP ImageContent attachments; `false` = always run OCR. When not set, uses tool parameter. If VLM not configured (no model/apikey), falls back to attachments with warning. |
 
 ## Development
 
