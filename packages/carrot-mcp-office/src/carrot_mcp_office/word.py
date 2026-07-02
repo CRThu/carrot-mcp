@@ -329,6 +329,35 @@ def delete_table(path: str, table_index: int) -> dict:
 
 
 @mcp.tool()
+def get_table(path: str, table_index: int) -> dict:
+    """Read table content as 2D array.
+
+    Args:
+        path: Absolute path to the .doc/.docx file.
+        table_index: Table index (0-based).
+    """
+    try:
+        path, err = _handle_docx(path)
+        if err:
+            return err
+        doc = Document(path)
+        if table_index < 0 or table_index >= len(doc.tables):
+            return {"status": "error", "message": f"Table index {table_index} out of range (0-{len(doc.tables)-1})"}
+        table = doc.tables[table_index]
+        data = [[cell.text for cell in row.cells] for row in table.rows]
+        return {
+            "status": "ok",
+            "path": path,
+            "table_index": table_index,
+            "rows": len(data),
+            "cols": len(data[0]) if data else 0,
+            "data": data,
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@mcp.tool()
 def insert_image(path: str, image_path: str, index: int | None = None, width: float | None = None) -> dict:
     """Insert an image into the document.
 
@@ -477,6 +506,9 @@ def get_outline(path: str) -> dict:
         path: Absolute path to the .doc/.docx file.
     """
     try:
+        path, err = _handle_docx(path)
+        if err:
+            return err
         doc = Document(path)
         headings = []
         for i, para in enumerate(doc.paragraphs):
@@ -532,6 +564,9 @@ def get_content_by_outline(path: str, sections: list) -> list:
         followed by section content as TextContent and images as ImageContent.
     """
     try:
+        path, err = _handle_docx(path)
+        if err:
+            return [TextContent(type="text", text=json.dumps(err))]
         doc = Document(path)
         flat = []
         for i, para in enumerate(doc.paragraphs):

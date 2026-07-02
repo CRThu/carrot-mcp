@@ -115,8 +115,6 @@ python -m carrot_mcp_sys
 | `version` | Get server version info |
 | `get_toc` | Get table of contents with page ranges |
 | `get_pages` | Convert specific pages to markdown (supports multimodal/OCR/force_ocr) |
-| `create_task` | Start background full PDF conversion (multimodal/force_ocr option) |
-| `get_status` | Check progress of background conversion task |
 
 **Environment variables:**
 
@@ -159,6 +157,9 @@ python -m carrot_mcp_sys
 | Tool | Description |
 |------|-------------|
 | `inspect` | Inspect document structure (paragraphs, tables, images) |
+| `get_outline` | Get document outline as tree + flat list |
+| `get_content_by_outline` | Get content for sections identified by outline indices |
+| `get_table` | Read table content as 2D array |
 | `insert_para` | Insert a paragraph |
 | `modify_para` | Modify paragraph text |
 | `format_para` | Format a paragraph (style, alignment, font) |

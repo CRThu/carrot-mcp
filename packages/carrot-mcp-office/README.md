@@ -42,6 +42,7 @@ All Excel tools accept `.xls`/`.xlsx` files (`.xls` auto-converted on Windows).
 | Tool | Description |
 |------|-------------|
 | `inspect` | Inspect document structure (paragraphs, tables, images, styles). Only returns non-empty paragraphs. |
+| `get_table` | Read table content as 2D array. |
 | `insert_para` | Insert a paragraph |
 | `modify_para` | Modify paragraph text |
 | `format_para` | Format a paragraph (style, alignment, font) |

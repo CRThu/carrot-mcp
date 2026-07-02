@@ -208,6 +208,7 @@ Cache Layer (cache.py — JSON: %APPDATA%/carrot-mcp/pdf/<hash>.json)
 | `inspect` | Inspect document structure (paragraphs, tables, images, styles). Only returns non-empty paragraphs. Accepts `.doc` (auto-converted). |
 | `get_outline` | Get document outline as tree + flat list. Use flat array indices (0-based position) with `get_content_by_outline`. Accepts `.doc`. |
 | `get_content_by_outline` | Get paragraphs, tables, and images for sections identified by flat outline indices (NOT the `index` field in nodes). Accepts `.doc`. |
+| `get_table` | Read table content as 2D array. Accepts `.doc`. |
 | `insert_para` | Insert a paragraph |
 | `modify_para` | Modify paragraph text |
 | `format_para` | Format a paragraph (style, alignment, font) |

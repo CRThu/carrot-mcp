@@ -12,6 +12,7 @@ from carrot_mcp_office.word import (
     format_para,
     delete_para,
     insert_table,
+    get_table,
     modify_table,
     format_table,
     delete_table,
@@ -724,3 +725,27 @@ def test_parse_sections_string_int():
 
 def test_parse_sections_negative():
     assert _parse_sections(["-1"], 10) == [-1]
+
+
+def test_get_table():
+    path = os.path.join(tempfile.mkdtemp(), "test_get_table.docx")
+    try:
+        insert_table(path, rows=3, cols=2, data=[["a", "b"], ["c", "d"], ["e", "f"]])
+        result = get_table(path, table_index=0)
+        assert result["status"] == "ok"
+        assert result["rows"] == 3
+        assert result["cols"] == 2
+        assert result["data"] == [["a", "b"], ["c", "d"], ["e", "f"]]
+    finally:
+        _cleanup(path)
+
+
+def test_get_table_out_of_range():
+    path = os.path.join(tempfile.mkdtemp(), "test_get_table_oor.docx")
+    try:
+        insert_table(path, rows=2, cols=2)
+        result = get_table(path, table_index=5)
+        assert result["status"] == "error"
+        assert "out of range" in result["message"]
+    finally:
+        _cleanup(path)
