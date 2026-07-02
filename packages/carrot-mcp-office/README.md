@@ -50,6 +50,8 @@ Carrot MCP Office Server — Excel and Word automation via MCP.
 | `delete_table` | Delete a table |
 | `insert_image` | Insert an image |
 | `delete_image` | Delete an inline image |
+| `get_outline` | Get document outline (heading hierarchy with paragraph indices) |
+| `get_content_by_outline` | Get paragraphs, tables, and images for specific outline sections |
 
 ### Backup Tools
 

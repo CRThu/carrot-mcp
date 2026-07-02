@@ -193,6 +193,61 @@ Cache Layer (cache.py — JSON: %APPDATA%/carrot-mcp/pdf/<hash>.json)
 - `CARROT_MCP_PROXY`: HTTP proxy URL for API calls
 - `CARROT_MCP_FORCE_MULTIMODAL`: `true` = always return images as attachments; `false` = always run OCR. When not set, uses tool parameter. If VLM not configured (no model/apikey), falls back to attachments with warning.
 
+## Office MCP Server Tools
+
+| Tool | Description |
+|------|-------------|
+| `version` | Get server version info and backup configuration |
+| `backup_history` | List all backup versions of a file |
+| `backup_restore` | Restore a file to a specific backup version |
+
+### Word Tools
+
+| Tool | Description |
+|------|-------------|
+| `inspect` | Inspect document structure (paragraphs, tables, images, styles) |
+| `get_outline` | Get document outline (heading hierarchy with paragraph indices) |
+| `get_content_by_outline` | Get paragraphs, tables, and images for specific outline sections |
+| `insert_para` | Insert a paragraph |
+| `modify_para` | Modify paragraph text |
+| `format_para` | Format a paragraph (style, alignment, font) |
+| `delete_para` | Delete a paragraph |
+| `insert_table` | Insert a table with optional data |
+| `modify_table` | Modify a table cell |
+| `format_table` | Apply a table style |
+| `delete_table` | Delete a table |
+| `insert_image` | Insert an image |
+| `delete_image` | Delete an inline image |
+
+### Excel Tools
+
+| Tool | Description |
+|------|-------------|
+| `workbook_metadata` | Get workbook metadata (sheet names, properties) |
+| `workbook_search` | Search for values in a sheet |
+| `create_sheet` / `rename_sheet` / `delete_sheet` | Sheet management |
+| `insert_rows` / `delete_rows` | Row operations |
+| `insert_columns` / `delete_columns` | Column operations |
+| `read_range` / `write_range` / `copy_range` / `delete_range` | Range operations |
+| `read_chart` / `write_chart` | Chart operations |
+| `format_range` | Format cells (font, color, alignment, merge/unmerge) |
+
+### Architecture
+
+```
+Application Layer (MCP tools)
+    ↓ inspect/get_outline/get_content_by_outline/insert_*/modify_*/format_*/delete_*
+Word Layer (word.py — python-docx, heading hierarchy, content extraction)
+Excel Layer (excel.py — openpyxl, cell/range/chart operations)
+Conversion Layer (convert.py — .doc/.xls → .docx/.xlsx via win32com)
+Backup Layer (backup.py — auto-versioning on every write)
+```
+
+- `get_outline` extracts Heading 1–9 styles into a hierarchical tree with `children` and a flat list with `parent` tracking
+- `get_content_by_outline` takes flat outline indices (supports ranges like `"0-9"`, mixed `["0-4",6,8]`), returns paragraphs (text + index), tables (full data), and image counts for each section
+- Table position detection walks `doc.element.body` children to find the XML index, matching against paragraph range
+- `_heading_level()` parses "Heading N" style names; non-standard heading styles are ignored
+
 ## NFC MCP Server Tools
 
 | Tool | Description |

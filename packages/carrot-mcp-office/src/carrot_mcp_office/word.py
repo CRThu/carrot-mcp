@@ -2,14 +2,21 @@
 
 from __future__ import annotations
 
+import base64
+import json
 import os
 
 from docx import Document
 from docx.shared import Inches, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from mcp.types import ImageContent, TextContent
 
 from carrot_mcp_office._mcp import mcp, _save_and_return
 from carrot_mcp_office.convert import ensure_docx_format
+
+_NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+_R_NS = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+_A_NS = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
 
 
 def _open_or_create_document(path: str) -> Document:
@@ -377,3 +384,212 @@ def delete_image(path: str, image_index: int) -> dict:
         return {"status": "error", "message": f"Image index {image_index} out of range (found {current_index} images)"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+def _heading_level(style_name: str) -> int | None:
+    """Return heading level (1-9) from style name, or None if not a heading."""
+    if style_name.startswith("Heading "):
+        try:
+            return int(style_name.split(" ", 1)[1])
+        except (ValueError, IndexError):
+            pass
+    return None
+
+
+def _flatten_outline(nodes: list[dict]) -> list[dict]:
+    """Flatten outline tree into a list with parent tracking."""
+    result = []
+    for node in nodes:
+        result.append({
+            "level": node["level"],
+            "title": node["title"],
+            "index": node["index"],
+            "parent": node.get("parent"),
+        })
+        if node.get("children"):
+            result.extend(_flatten_outline(node["children"]))
+    return result
+
+
+def _has_images_in_para(para) -> bool:
+    return bool(para._element.findall(f".//{_NS}drawing"))
+
+
+def _extract_images_from_para(para) -> list[tuple[bytes, str]]:
+    """Extract (image_bytes, mime_type) from a paragraph's inline drawings."""
+    images = []
+    for drawing in para._element.findall(f".//{_NS}drawing"):
+        for blip in drawing.findall(f".//{_A_NS}blip"):
+            rId = blip.get(f"{_R_NS}embed")
+            if not rId:
+                continue
+            rel = para.part.rels.get(rId)
+            if rel is None:
+                continue
+            img_part = rel.target_part
+            img_bytes = img_part.blob
+            content_type = img_part.content_type or "image/png"
+            images.append((img_bytes, content_type))
+    return images
+
+
+def _parse_sections(raw: list, max_index: int) -> list[int]:
+    """Parse section spec into flat list of 0-based indices.
+
+    Accepts:
+      - int: used directly (e.g. [0, 2])
+      - str range: "0-9" expands to 0..9 (e.g. ["0-9"] → [0,1,...,9])
+      - str mixed: "0-4,6,8" expands to [0,1,2,3,4,6,8]
+      - str single: "3" treated as int 3
+    """
+    result = []
+    for item in raw:
+        if isinstance(item, int):
+            result.append(item)
+        elif isinstance(item, str):
+            for part in item.split(","):
+                part = part.strip()
+                if not part:
+                    continue
+                if "-" in part and not part.startswith("-"):
+                    a, b = part.split("-", 1)
+                    a, b = int(a.strip()), int(b.strip())
+                    result.extend(range(a, b + 1))
+                else:
+                    result.append(int(part))
+    return sorted(set(result))
+
+
+@mcp.tool()
+def get_outline(path: str) -> dict:
+    """Get document outline (heading hierarchy).
+
+    Returns a hierarchical tree of headings (Heading 1–9) with their
+    paragraph indices. Use the returned indices with get_content_by_outline
+    to fetch section content.
+
+    Args:
+        path: Absolute path to the .docx file.
+    """
+    try:
+        doc = Document(path)
+        headings = []
+        for i, para in enumerate(doc.paragraphs):
+            level = _heading_level(para.style.name)
+            if level is not None:
+                headings.append({"level": level, "title": para.text, "index": i})
+
+        stack: list[dict] = []
+        tree: list[dict] = []
+        for h in headings:
+            node = {"level": h["level"], "title": h["title"], "index": h["index"], "children": []}
+            while stack and stack[-1]["level"] >= h["level"]:
+                stack.pop()
+            if stack:
+                node["parent"] = stack[-1]["title"]
+                stack[-1]["children"].append(node)
+            else:
+                tree.append(node)
+            stack.append(node)
+
+        flat = _flatten_outline(tree)
+        return {
+            "status": "ok",
+            "path": path,
+            "outline": tree,
+            "flat": flat,
+            "count": len(flat),
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@mcp.tool()
+def get_content_by_outline(path: str, sections: list) -> list:
+    """Get content for specific outline sections.
+
+    Use get_outline first to obtain section indices, then pass them here
+    to fetch paragraphs, tables, and images for each section.
+    Images are returned as ImageContent attachments (not embedded in JSON).
+
+    Args:
+        path: Absolute path to the .docx file.
+        sections: Indices to fetch. Supports:
+            - int list: [0, 2, 5]
+            - range string: ["0-9"] → 0,1,...,9
+            - mixed: ["0-4", 6, 8] → 0,1,2,3,4,6,8
+
+    Returns:
+        list[TextContent | ImageContent] — first element is JSON metadata,
+        followed by section content as TextContent and images as ImageContent.
+    """
+    try:
+        doc = Document(path)
+        flat = []
+        for i, para in enumerate(doc.paragraphs):
+            level = _heading_level(para.style.name)
+            if level is not None:
+                flat.append({"level": level, "title": para.text, "index": i})
+
+        sec_indices = _parse_sections(sections, len(flat) - 1)
+        result: list = []
+        sections_meta = []
+
+        for sec_idx in sec_indices:
+            if sec_idx < 0 or sec_idx >= len(flat):
+                sections_meta.append({"section": sec_idx, "error": f"Index out of range (0-{len(flat)-1})"})
+                continue
+
+            start = flat[sec_idx]["index"]
+            end = len(doc.paragraphs)
+            for k in range(sec_idx + 1, len(flat)):
+                if flat[k]["level"] <= flat[sec_idx]["level"]:
+                    end = flat[k]["index"]
+                    break
+
+            paragraphs = []
+            tables = []
+            img_idx = 0
+
+            for j in range(start, end):
+                para = doc.paragraphs[j]
+                if para.text.strip():
+                    paragraphs.append({"index": j, "text": para.text})
+                for img_bytes, mime in _extract_images_from_para(para):
+                    result.append(ImageContent(
+                        type="image",
+                        data=base64.b64encode(img_bytes).decode(),
+                        mimeType=mime,
+                        context=f"Section {sec_idx} ({flat[sec_idx]['title']}), image {img_idx}",
+                    ))
+                    img_idx += 1
+
+            for t in doc.tables:
+                t_elem = t._element
+                t_index = None
+                for k, child in enumerate(doc.element.body):
+                    if child is t_elem:
+                        t_index = k
+                        break
+                if t_index is not None and start <= t_index < end:
+                    tables.append({
+                        "rows": len(t.rows),
+                        "cols": len(t.columns),
+                        "data": [[cell.text for cell in row.cells] for row in t.rows],
+                    })
+
+            sections_meta.append({
+                "section": sec_idx,
+                "title": flat[sec_idx]["title"],
+                "level": flat[sec_idx]["level"],
+                "paragraph_range": [start, end - 1],
+                "paragraphs": paragraphs,
+                "tables": tables,
+                "image_count": img_idx,
+            })
+
+        meta = {"status": "ok", "path": path, "sections": sections_meta, "count": len(sections_meta)}
+        result.insert(0, TextContent(type="text", text=json.dumps(meta, ensure_ascii=False)))
+        return result
+    except Exception as e:
+        return [TextContent(type="text", text=json.dumps({"status": "error", "message": str(e)}))]

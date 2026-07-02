@@ -32,7 +32,7 @@ def _convert_doc_to_docx(doc_path: str) -> str:
         word.Visible = False
         doc = word.Documents.Open(abs_path)
         # 16 = wdFormatXMLDocument (.docx)
-        doc.SaveAs2(new_path, FileFormat=16)
+        doc.SaveAs(new_path, FileFormat=16)
         doc.Close()
         word.Quit()
         return new_path
