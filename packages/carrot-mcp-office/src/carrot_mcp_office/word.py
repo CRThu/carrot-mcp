@@ -60,7 +60,6 @@ def inspect(path: str) -> dict:
             "status": "ok",
             "path": path,
             "total_paragraphs": len(doc.paragraphs),
-            "paragraph_count": len(doc.paragraphs),
             "table_count": len(doc.tables),
             "image_count": image_count,
             "styles_used": styles,
@@ -440,11 +439,9 @@ def _extract_images_from_para(para) -> list[tuple[bytes, str]]:
 def _parse_sections(raw: list, max_index: int) -> list[int]:
     """Parse section spec into flat list of 0-based indices.
 
-    Accepts:
-      - int: used directly (e.g. [0, 2])
-      - str range: "0-9" expands to 0..9 (e.g. ["0-9"] → [0,1,...,9])
-      - str mixed: "0-4,6,8" expands to [0,1,2,3,4,6,8]
-      - str single: "3" treated as int 3
+    Accepts a list where each element is one of:
+      - int: direct index (e.g. [0, 2, 5])
+      - str: range or comma-separated list (e.g. ["0-4,6,8"] or ["0-9"])
     """
     result = []
     for item in raw:
@@ -470,9 +467,11 @@ def get_outline(path: str) -> dict:
 
     Returns both a hierarchical tree and a flat list of headings (Heading 1–9).
     Each node contains: level, title, index (paragraph position), parent.
+
     To fetch section content, pass the flat array's 0-based position indices
-    (0, 1, 2, ...) to get_content_by_outline — NOT the `index` field, which
-    is the paragraph number in the document.
+    to get_content_by_outline. For example, if flat returns:
+      [{"level":1,"title":"Intro","index":0}, {"level":2,"title":"A","index":3}]
+    Then sections=[0, 1] fetches "Intro" and "A".
 
     Args:
         path: Absolute path to the .doc/.docx file.
@@ -520,13 +519,13 @@ def get_content_by_outline(path: str, sections: list) -> list:
 
     Args:
         path: Absolute path to the .doc/.docx file.
-        sections: Indices to fetch. These are indices into the `flat`
-            array returned by get_outline (NOT the `index` field inside
-            each node — that is the paragraph position in the document).
-            Supports:
-            - int list: [0, 2, 5] → flat[0], flat[2], flat[5]
-            - range string: ["0-9"] → flat[0] through flat[9]
-            - mixed: ["0-4", 6, 8] → flat[0]..flat[4], flat[6], flat[8]
+        sections: Indices into the `flat` array returned by get_outline
+            (NOT the `index` field inside each node — that is the
+            paragraph position in the document). Accepts a list where
+            each element is:
+            - int: direct index, e.g. [0, 2, 5]
+            - str: range or comma-separated list, e.g. ["0-9"] or
+              ["0-4,6,8"] or ["0-4", 6, 8]
 
     Returns:
         list[TextContent | ImageContent] — first element is JSON metadata,

@@ -248,7 +248,7 @@ Backup Layer (backup.py — auto-versioning on every write)
 ```
 
 - `get_outline` extracts Heading 1–9 styles into a hierarchical tree with `children` and a flat list with `parent` tracking
-- `get_content_by_outline` takes flat array position indices (0, 1, 2, ...) from `get_outline`'s `flat` return — NOT the `index` field in each node (that's the paragraph position in the document). Supports ranges like `"0-9"`, mixed `["0-4",6,8]`. Returns paragraphs (non-empty text + index), tables (2D cell values), and images as ImageContent attachments.
+- `get_content_by_outline` takes flat array position indices (0, 1, 2, ...) from `get_outline`'s `flat` return — NOT the `index` field in each node (that's the paragraph position in the document). Accepts ints, range strings (`"0-9"`), comma-separated (`"0-4,6,8"`), or mixed (`["0-4",6,8]`). Returns paragraphs (non-empty text + index), tables (2D cell values), and images as ImageContent attachments.
 - Table position detection walks `doc.element.body` children to find the XML index, matching against paragraph range
 - `_heading_level()` parses "Heading N" style names; non-standard heading styles are ignored
 

@@ -318,7 +318,7 @@ def test_insert_image_at_index():
         result = insert_image(path, img_path, index=1)
         assert result["status"] == "ok"
         info = word_inspect(path)
-        assert info["paragraph_count"] == 3
+        assert info["total_paragraphs"] == 3
         assert info["image_count"] == 1
     finally:
         _cleanup(path)
