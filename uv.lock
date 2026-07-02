@@ -226,7 +226,7 @@ requires-dist = [
 
 [[package]]
 name = "carrot-mcp-office"
-version = "0.2.0"
+version = "0.2.1"
 source = { editable = "packages/carrot-mcp-office" }
 dependencies = [
     { name = "mcp" },
