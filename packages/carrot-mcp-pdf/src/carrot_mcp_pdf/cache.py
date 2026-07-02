@@ -12,6 +12,14 @@ import os
 import threading
 import time
 
+MIME_MAP = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+}
+
 
 def _get_base_dir() -> str:
     """Return base cache directory: %APPDATA%/carrot-mcp/pdf or ~/.local/share/carrot-mcp/pdf."""

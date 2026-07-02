@@ -148,9 +148,11 @@ def get_pages(pdf_path: str, pages: str, multimodal: bool = True, force_ocr: boo
 
     cached_pages = cache.get("pages", {})
     uncached = [p for p in page_list if str(p) not in cached_pages]
+    failed_pages: list[int] = []
 
     if uncached:
         if force_ocr:
+            failed_pages = []
             for page_num in uncached:
                 try:
                     content = ocr_page(pdf_path, page_num)
@@ -159,7 +161,7 @@ def get_pages(pdf_path: str, pages: str, multimodal: bool = True, force_ocr: boo
                         "ocr_content": content,
                     }
                 except Exception:
-                    pass
+                    failed_pages.append(page_num)
         else:
             with tempfile.TemporaryDirectory() as tmp_dir:
                 image_dir = os.path.join(tmp_dir, "images")
@@ -196,12 +198,15 @@ def get_pages(pdf_path: str, pages: str, multimodal: bool = True, force_ocr: boo
         save_cache(pdf_path, cache)
 
     use_ocr = not multimodal or cache.get("force_ocr")
+    meta = {
+        "status": "ok",
+        "total_pages": total_pages,
+        "pages": [str(p) for p in page_list],
+    }
+    if failed_pages:
+        meta["failed_pages"] = failed_pages
     result: list = [
-        TextContent(type="text", text=json.dumps({
-            "status": "ok",
-            "total_pages": total_pages,
-            "pages": [str(p) for p in page_list],
-        })),
+        TextContent(type="text", text=json.dumps(meta)),
     ]
 
     for p in page_list:
@@ -315,6 +320,10 @@ def _convert_all(pdf_path: str, task_id: str, multimodal: bool, force_ocr: bool 
             except Exception as e:
                 import sys
                 print(f"[carrot-mcp-pdf] page {page_num} failed, stopping: {e}", file=sys.stderr)
+                # Break (not continue): OCR API network errors are likely persistent,
+                # continuing would waste time retrying all subsequent pages.
+                # On restart, cached pages are skipped so conversion resumes from here.
+                tasks[task_id]["error_message"] = str(e)
                 break
 
             tasks[task_id]["current_page"] = page_num
@@ -407,7 +416,7 @@ def get_status(task_id: str) -> dict:
 
     Returns:
         {status, task_id, conversion_status, progress_percent, current_page, total_pages,
-         cached_pages, failed_at_page, start_time}
+         cached_pages, failed_at_page, error_message, start_time}
     """
     task = _find_task_in_files(task_id)
     if task is None:
@@ -422,6 +431,7 @@ def get_status(task_id: str) -> dict:
         "total_pages": task.get("total_pages", 0),
         "cached_pages": task.get("cached_pages", 0),
         "failed_at_page": task.get("failed_at_page"),
+        "error_message": task.get("error_message"),
         "start_time": task.get("start_time", ""),
     }
 

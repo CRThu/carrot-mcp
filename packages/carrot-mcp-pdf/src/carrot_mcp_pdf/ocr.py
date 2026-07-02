@@ -2,7 +2,10 @@
 
 import base64
 import os
+
 import litellm
+
+from carrot_mcp_pdf.cache import MIME_MAP
 
 # OCR_PROMPT = "Extract all text from this image. Output only the raw text, no explanation. Preserve the original layout as closely as possible."
 OCR_PROMPT = """
@@ -56,14 +59,7 @@ def recognize_image(
         image_b64 = base64.b64encode(f.read()).decode()
 
     ext = os.path.splitext(image_path)[1].lower()
-    mime_map = {
-        ".jpg": "image/jpeg",
-        ".jpeg": "image/jpeg",
-        ".png": "image/png",
-        ".gif": "image/gif",
-        ".webp": "image/webp",
-    }
-    mime = mime_map.get(ext, "image/jpeg")
+    mime = MIME_MAP.get(ext, "image/jpeg")
 
     kwargs: dict = {"model": model, "timeout": timeout}
     if api_key:

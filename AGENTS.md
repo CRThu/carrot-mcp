@@ -177,16 +177,18 @@ Cache Layer (cache.py — JSON: %APPDATA%/carrot-mcp/pdf/<hash>.json)
 - **server.py** — MCP tool definitions only, delegates to converter/cache
 - **converter.py** — PDF conversion, image processing, content parsing, VLM config
 - **ocr.py** — Vision model OCR via litellm (single responsibility)
-- **cache.py** — Cache/task persistence, path management, parse_page_range
+- **cache.py** — Cache/task persistence, path management, parse_page_range, shared MIME_MAP
 
 - Cache: `%APPDATA%/carrot-mcp/pdf/<md5(pdf_path)>.json`
 - JSON structure: `{name, size, path, total_pages, force_ocr, toc, pages: {page_num: {content: [...], ocr_content: [...]}}}`
-- Content stored as ordered blocks: `[{type: "text", data: "..."}, {"type": "image", data: bytes, mime: "..."}]`
-- Each page caches **both** formats: `content` (raw image bytes) and `ocr_content` (OCR text)
+- Content stored as ordered blocks: `[{type: "text", data: "..."}, {"type": "image", data: base64_str, mime: "..."}]`
+- Each page caches **both** formats: `content` (images as base64 strings) and `ocr_content` (OCR text or images)
 - `get_pages` returns `list[TextContent | ImageContent]` — metadata in first TextContent, images as ImageContent attachments (no base64 truncation)
+- `get_pages` metadata includes `failed_pages` list when force_ocr pages fail OCR
 - `multimodal=True` returns `content` with images as `ImageContent`, `multimodal=False` returns `ocr_content` as text
 - `force_ocr` is PDF-level flag (not per-page) — if a few pages are wrong, the whole PDF is likely wrong
-- When `force_ocr=True`: renders entire page as PNG image, calls OCR API, caches result; future requests also use OCR
+- When `force_ocr=True`: renders entire page as PNG image, calls OCR API (if VLM configured), caches result; if VLM not configured, falls back to returning the rendered page as image
+- `get_status` returns `error_message` field with the last failure reason (if any)
 - Background conversion via `threading.Thread` with progress tracking in separate `<hash>_tasks.json`
 - Completed tasks auto-delete from tasks.json; failed tasks retained for debugging
 - On restart, `create_task` resumes by skipping already-cached pages

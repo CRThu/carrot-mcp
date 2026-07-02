@@ -8,17 +8,10 @@ import tempfile
 import pymupdf
 import pymupdf4llm
 
-from carrot_mcp_pdf.cache import save_cache
+from carrot_mcp_pdf.cache import MIME_MAP, save_cache
 from carrot_mcp_pdf.ocr import recognize_image
 
 _IMG_PATTERN = re.compile(r"!\[.*?\]\((.*?)\)")
-_MIME_MAP = {
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".png": "image/png",
-    ".gif": "image/gif",
-    ".webp": "image/webp",
-}
 
 VISION_MODEL = os.environ.get("CARROT_MCP_MODEL")
 VISION_API_KEY = os.environ.get("CARROT_MCP_APIKEY")
@@ -41,7 +34,7 @@ def vlm_configured() -> bool:
 def read_image(image_path: str) -> tuple[bytes, str]:
     """Read an image file and return (raw_bytes, mime_type)."""
     ext = os.path.splitext(image_path)[1].lower()
-    mime = _MIME_MAP.get(ext, "image/jpeg")
+    mime = MIME_MAP.get(ext, "image/jpeg")
     with open(image_path, "rb") as f:
         data = f.read()
     return data, mime
@@ -50,14 +43,19 @@ def read_image(image_path: str) -> tuple[bytes, str]:
 def render_page_as_image(pdf_path: str, page_num: int, dpi: int = 300) -> str:
     """Render a PDF page as a PNG image file. Returns path to the temp image."""
     doc = pymupdf.open(pdf_path)
-    page = doc[page_num - 1]
-    zoom = dpi / 72
-    mat = pymupdf.Matrix(zoom, zoom)
-    pix = page.get_pixmap(matrix=mat)
-    tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
-    pix.save(tmp.name)
-    doc.close()
-    return tmp.name
+    try:
+        page = doc[page_num - 1]
+        zoom = dpi / 72
+        mat = pymupdf.Matrix(zoom, zoom)
+        pix = page.get_pixmap(matrix=mat)
+        tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+        try:
+            pix.save(tmp.name)
+        finally:
+            tmp.close()
+        return tmp.name
+    finally:
+        doc.close()
 
 
 def ocr_page(pdf_path: str, page_num: int) -> list[dict]:
@@ -65,12 +63,14 @@ def ocr_page(pdf_path: str, page_num: int) -> list[dict]:
 
     Renders the entire page as a PNG image and sends it to the vision model for OCR.
     Returns a list containing a single text block with the OCR result.
+    If VLM is not configured, returns the rendered page as an image block (fallback).
     """
-    if not vlm_configured():
-        return [{"type": "text", "data": "[VLM model not configured, cannot force OCR]"}]
-
     image_path = render_page_as_image(pdf_path, page_num)
     try:
+        if not vlm_configured():
+            img_bytes, mime = read_image(image_path)
+            return [{"type": "image", "data": base64.b64encode(img_bytes).decode(), "mime": mime}]
+
         ocr_result = recognize_image(
             image_path,
             model=VISION_MODEL,
@@ -88,11 +88,11 @@ def parse_page_content(text: str, image_dir: str) -> tuple[list[dict], list[dict
     """Parse pymupdf4llm markdown output into ordered content blocks.
 
     Returns tuple of (content, ocr_content):
-    - content: blocks with images as raw bytes (for multimodal=True → ImageContent)
+    - content: blocks with images as base64 strings (for multimodal=True → ImageContent)
     - ocr_content: blocks with images replaced by OCR text (for multimodal=False)
 
     data: URI images are skipped (already inline).
-    Image blocks: {"type": "image", "data": bytes, "mime": str}
+    Image blocks: {"type": "image", "data": base64_str, "mime": str}
     Text blocks: {"type": "text", "data": str}
     """
     content = []
@@ -115,7 +115,7 @@ def parse_page_content(text: str, image_dir: str) -> tuple[list[dict], list[dict
         img_path = os.path.join(image_dir, os.path.basename(img_ref))
         if os.path.exists(img_path):
             img_bytes, mime = read_image(img_path)
-            content.append({"type": "image", "data": img_bytes, "mime": mime})
+            content.append({"type": "image", "data": base64.b64encode(img_bytes).decode(), "mime": mime})
 
             if vlm_configured():
                 try:
@@ -129,7 +129,7 @@ def parse_page_content(text: str, image_dir: str) -> tuple[list[dict], list[dict
                     raise RuntimeError(f"Image OCR failed: {e}") from e
                 ocr_content.append({"type": "text", "data": ocr_result})
             else:
-                ocr_content.append({"type": "image", "data": img_bytes, "mime": mime})
+                ocr_content.append({"type": "image", "data": base64.b64encode(img_bytes).decode(), "mime": mime})
                 ocr_content.append({"type": "text", "data": "[VLM model not configured, returning image as attachment]"})
 
     remaining = text[last_end:].strip()
@@ -144,6 +144,7 @@ def get_total_pages(pdf_path: str, cache: dict) -> int:
     """Get total page count from cache or by opening the PDF file.
 
     Updates cache with the result if it was not already cached.
+    Returns 0 if the PDF cannot be opened (corrupted, inaccessible, etc.).
     """
     total = cache.get("total_pages", 0)
     if not total:
@@ -153,6 +154,7 @@ def get_total_pages(pdf_path: str, cache: dict) -> int:
             doc.close()
             cache["total_pages"] = total
             save_cache(pdf_path, cache)
-        except Exception:
-            pass
+        except Exception as e:
+            import sys
+            print(f"[carrot-mcp-pdf] cannot open PDF: {pdf_path}: {e}", file=sys.stderr)
     return total

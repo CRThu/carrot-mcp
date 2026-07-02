@@ -1,5 +1,6 @@
 """Tests for carrot_mcp_pdf.converter module."""
 
+import base64
 from unittest.mock import MagicMock, patch
 
 from carrot_mcp_pdf.converter import (
@@ -81,7 +82,8 @@ def test_parse_page_content_with_image_multimodal(tmp_path):
     assert len(content) == 3
     assert content[0]["type"] == "text"
     assert content[1]["type"] == "image"
-    assert isinstance(content[1]["data"], bytes)
+    assert isinstance(content[1]["data"], str)
+    assert base64.b64decode(content[1]["data"]).startswith(b"\x89PNG")
     assert content[1]["mime"] == "image/png"
     assert content[2]["type"] == "text"
 
@@ -130,13 +132,15 @@ def test_parse_page_content_vlm_not_configured_fallback(tmp_path):
     assert len(content) == 3
     assert content[0] == {"type": "text", "data": "See"}
     assert content[1]["type"] == "image"
-    assert isinstance(content[1]["data"], bytes)
+    assert isinstance(content[1]["data"], str)
+    assert base64.b64decode(content[1]["data"]).startswith(b"\x89PNG")
     assert content[2] == {"type": "text", "data": "above"}
 
     assert len(ocr_content) == 4
     assert ocr_content[0] == {"type": "text", "data": "See"}
     assert ocr_content[1]["type"] == "image"
-    assert isinstance(ocr_content[1]["data"], bytes)
+    assert isinstance(ocr_content[1]["data"], str)
+    assert base64.b64decode(ocr_content[1]["data"]).startswith(b"\x89PNG")
     assert ocr_content[2] == {"type": "text", "data": "[VLM model not configured, returning image as attachment]"}
     assert ocr_content[3] == {"type": "text", "data": "above"}
 
@@ -206,13 +210,19 @@ def test_vlm_configured_neither():
 
 # ── ocr_page ─────────────────────────────────────────────────────────────────
 
-def test_ocr_page_vlm_not_configured():
+def test_ocr_page_vlm_not_configured(tmp_path):
+    img = tmp_path / "page.png"
+    img.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 50)
+
     with patch("carrot_mcp_pdf.converter.VISION_MODEL", None), \
-         patch("carrot_mcp_pdf.converter.VISION_API_KEY", None):
+         patch("carrot_mcp_pdf.converter.VISION_API_KEY", None), \
+         patch("carrot_mcp_pdf.converter.render_page_as_image", return_value=str(img)):
         result = ocr_page("/fake.pdf", 1)
     assert len(result) == 1
-    assert result[0]["type"] == "text"
-    assert "not configured" in result[0]["data"].lower()
+    assert result[0]["type"] == "image"
+    assert isinstance(result[0]["data"], str)
+    assert base64.b64decode(result[0]["data"]).startswith(b"\x89PNG")
+    assert result[0]["mime"] == "image/png"
 
 
 def test_ocr_page_success(tmp_path):

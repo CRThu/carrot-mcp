@@ -49,9 +49,9 @@ Cache Layer (cache.py — JSON: %APPDATA%/carrot-mcp/pdf/<md5>.json)
 - **cache.py** — Cache/task persistence, path management, parse_page_range
 
 - **Cache**: `%APPDATA%/carrot-mcp/pdf/<md5>.json`
-- **Dual format**: each page caches both `content` (raw image bytes) and `ocr_content` (OCR text)
-- **Force OCR**: PDF-level flag — renders page as image and OCRs it; for scanned PDFs or garbled text
-- **Background tasks**: separate `<hash>_tasks.json` with progress tracking
+- **Dual format**: each page caches both `content` (images as base64 strings) and `ocr_content` (OCR text or images)
+- **Force OCR**: PDF-level flag — renders page as image and OCRs it; if VLM not configured, falls back to returning the rendered image
+- **Background tasks**: separate `<hash>_tasks.json` with progress tracking; `get_status` returns `error_message` on failure
 - **Image return**: images returned as MCP `ImageContent` attachments (no base64 truncation)
 
 ## Environment Variables
