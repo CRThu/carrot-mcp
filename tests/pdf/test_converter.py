@@ -280,11 +280,7 @@ def test_render_page_as_image_returns_png():
         mock_pdf.open.return_value = mock_doc
         mock_pdf.Matrix.return_value = MagicMock()
 
-        with patch("builtins.open", MagicMock()):
-            with patch("tempfile.NamedTemporaryFile") as mock_tmp:
-                mock_tmp.return_value.__enter__ = MagicMock(return_value=mock_tmp)
-                mock_tmp.return_value.__exit__ = MagicMock(return_value=False)
-                mock_tmp.return_value.name = "/tmp/test.png"
-                result = render_page_as_image("/fake.pdf", 1)
+        with patch("tempfile.mkstemp", return_value=(0, "/tmp/test.png")):
+            result = render_page_as_image("/fake.pdf", 1)
 
     assert result == "/tmp/test.png"
