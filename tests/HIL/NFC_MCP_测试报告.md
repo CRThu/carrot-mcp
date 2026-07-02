@@ -1,8 +1,8 @@
 # carrot-mcp-nfc 硬件在环测试报告
 
-- **测试时间**: 2026-06-30
-- **MCP 服务**: carrot-mcp-nfc v0.1.1
-- **测试卡片**: NTAG213 (UID: 5AD5E377014189)
+- **测试时间**: 2026-07-02
+- **MCP 服务**: carrot-mcp-nfc v0.2.0
+- **测试卡片**: NTAG213 (PN532: UID=5AD5E377014189, CLRC663: UID=5AF5337C014189)
 
 ---
 
@@ -12,21 +12,20 @@
 |------|:-----:|:-------:|------|
 | `version` | ✅ | ✅ | |
 | `list_readers` | ✅ | ✅ | |
-| `connect` | ✅ | ✅ | |
+| `connect` | ✅ | ✅ | ⚠️ transport 仅支持 serial |
 | `disconnect` | ✅ | ✅ | |
 | `field_on` | ✅ | ✅ | |
 | `field_off` | ✅ | ✅ | |
-| `find` | ✅ | ✅ | |
-| `transceive` | ✅ | ✅ | 基本功能正常 |
-| `exchange` | ✅ | ✅ | |
+| `find` | ✅ | ✅ | ⚠️ 高级模式 ATQA 字节序不同 |
+| `transceive` | ⚠️ | ⚠️ | ⚠️ last_rx_bits 不一致; ⚠️ tx_crc=False 无响应 |
+| `reqa` | ✅ | ✅ | |
+| `wupa` | ✅ | ✅ | |
+| `halt` | ✅ | ✅ | |
+| `select` | ⚠️ | ⚠️ | CL2 SELECT 驱动 trace 标注误判 |
+| `anticoll` | ⚠️ | ⚠️ | ⚠️ bits 不一致; ❌ uid_prefix 无响应 |
 | `trace_get` | ✅ | ✅ | |
 | `trace_clear` | ✅ | ✅ | |
-| `script` | ✅ | ✅ | 基本功能正常 |
-| `reqa` | ❌ | ❌ | 未实现 |
-| `wupa` | ❌ | ❌ | 未实现 |
-| `halt` | ❌ | ❌ | 未实现 |
-| `select` | ❌ | ❌ | 参数不匹配 |
-| `anticoll` | ❌ | ❌ | 未实现 |
+| `script` | ⚠️ | ⚠️ | ⚠️ wait 仅 PN532 验证 |
 
 ---
 
@@ -35,8 +34,7 @@
 | 项目 | 结果 |
 |------|------|
 | 状态 | ✅ PASS |
-| 返回值 | `{status: "ok", name: "carrot-mcp-nfc", version: "0.1.1"}` |
-| 说明 | 无参数，正常返回服务名称和版本号 |
+| 返回值 | `{status: "ok", name: "carrot-mcp-nfc", version: "0.2.0"}` |
 
 ---
 
@@ -56,6 +54,7 @@
 | 状态 | ✅ PASS |
 | 测试参数 | `port=COM20, reader_type=pn532` / `port=COM4, reader_type=clrc663` |
 | 返回 | 均 `{status: "ok"}` |
+| ⚠️ | `transport` 参数仅支持 `"serial"`，无法测试其他传输类型 |
 
 ---
 
@@ -68,7 +67,7 @@
 
 ---
 
-## 5. carrot-nfc_field_on
+## 5. carrot-nfc_field_on / field_off
 
 | 项目 | 结果 |
 |------|------|
@@ -76,192 +75,233 @@
 
 ---
 
-## 6. carrot-nfc_field_off
+## 6. carrot-nfc_find
 
-| 项目 | 结果 |
-|------|------|
-| 状态 | ✅ PASS |
+### 6.1 高级模式 (low_level=False)
+
+| 读卡器 | 结果 | UID | ATQ | SAK |
+|--------|:----:|-----|-----|-----|
+| PN532 | ✅ | `5AD5E377014189` | `0044` | `0x0` |
+| CLRC663 | ✅ | `5AF5337C014189` | `4400` | `0x0` |
+
+> ⚠️ ATQA 字节序不同: PN532=`0044`, CLRC663=`4400`。驱动层字节序差异。
+
+### 6.2 低级模式 (low_level=True)
+
+| 读卡器 | 结果 | UID | ATQ | SAK |
+|--------|:----:|-----|-----|-----|
+| PN532 | ✅ | `5AD5E377014189` | `4400` | `0x0` |
+| CLRC663 | ✅ | `5AF5337C014189` | `4400` | `0x0` |
+
+> ⚠️ PN532 高级模式 ATQ=`0044`，低级模式 ATQ=`4400`，同一读卡器两种模式 ATQA 字节序不一致。
 
 ---
 
-## 7. carrot-nfc_find
+## 7. carrot-nfc_transceive
 
-| 项目 | 结果 |
-|------|------|
-| 状态 | ✅ PASS |
-| 返回值 | `uid="5AD5E377014189"`, `sak="0x0"` |
+### 7.1 基本 READ 命令
 
-> PN532 ATQ=`0044`，CLRC663 ATQ=`4400`（字节序不同，属正常差异）
-
----
-
-## 8. carrot-nfc_transceive
-
-### 8.1 基本 READ 命令
-
-| 测试用例 | 参数 | PN532 | CLRC663 |
-|----------|------|:-----:|:-------:|
-| READ page 0-3 | `data="3000"` | ✅ `5AD5E3E477014189BE480000E1101200` | ✅ 同 |
-| READ page 4-7 | `data="3004"` | ✅ `DEADBEEF340300FE0000000000000000` | ✅ 同 |
-| tx_crc=True, rx_crc=True | 默认 | ✅ | ✅ |
-
-### 8.2 tx_crc / rx_crc 参数
-
-| 参数组合 | PN532 | CLRC663 |
+| 测试用例 | PN532 | CLRC663 |
 |----------|-------|---------|
-| `tx_crc=False` | ❌ 返回空字符串 | ❌ `"No response from card"` |
-| `rx_crc=False` | ❌ 返回空字符串 | ❌ `"No response from card"` |
+| READ page 0-3 (`data="3000"`) | ✅ `5AD5E3E477014189BE480000E1101200` | ✅ `5AF533147C014189B5480000E1101200` |
+| READ page 4-7 (`data="3004"`) | ✅ `DEADBEEF340300FE0000000000000000` | ✅ `0103A00C340300FE0000000000000000` |
 
-> **差异**: PN532 静默失败（空字符串），CLRC663 返回明确错误信息
-
-### 8.3 last_tx_bits 参数
-
-| 参数 | PN532 | CLRC663 |
-|------|-------|---------|
-| `last_tx_bits=7, data="60"` | ⚠️ 返回空 | ❌ `"No response from card"` |
-
-> 已激活状态下发送 REQA 不会再响应，属预期行为
-
-### 8.4 无效输入
+### 7.2 无效输入
 
 | 测试用例 | 结果 |
 |----------|------|
 | `data="ZZZZ"` | ✅ 两读卡器均返回 `"Invalid hex string"` |
 
----
-
-## 9. carrot-nfc_exchange
+### 7.3 tx_crc / rx_crc
 
 | 测试用例 | PN532 | CLRC663 |
 |----------|:-----:|:-------:|
-| READ page 0-3 | ✅ `5AD5E3E477014189BE480000E1101200` | ✅ 同 |
-| READ page 4-7 | ✅ `DEADBEEF340300FE0000000000000000` | ✅ 同 |
+| `tx_crc=False, rx_crc=True` | ⚠️ "No response" | ⚠️ "No response" |
+| `tx_crc=True, rx_crc=False` | ⚠️ 返回 18 字节 (含 CRC 末尾 2 字节) | ⚠️ 返回 18 字节 (含 CRC 末尾 2 字节) |
 
-> exchange 使用 InDataExchange（自动加 CRC），transceive 使用 InCommunicateThru（可配置 CRC）。正常场景下两者结果一致。
+> ⚠️ `tx_crc=False`: 发送帧不含 CRC，卡片拒绝，无响应。功能正确但无错误提示，调用者无法区分"卡片不存在"与"CRC 被拒绝"。
+> ⚠️ `rx_crc=False`: 返回数据包含 CRC 字节 (length=18 而非 16)，调用者需自行剥离末尾 2 字节。
 
----
-
-## 10. carrot-nfc_reqa
-
-| 项目 | 结果 |
-|------|------|
-| 状态 | ❌ **未实现** |
-| PN532 错误 | `'PN532_HSU' object has no attribute 'reqa'` |
-| CLRC663 错误 | `'CLRC663' object has no attribute 'reqa'` |
-
----
-
-## 11. carrot-nfc_wupa
-
-| 项目 | 结果 |
-|------|------|
-| 状态 | ❌ **未实现** |
-| PN532 错误 | `'PN532_HSU' object has no attribute 'wupa'` |
-| CLRC663 错误 | `'CLRC663' object has no attribute 'wupa'` |
-
----
-
-## 12. carrot-nfc_halt
-
-| 项目 | 结果 |
-|------|------|
-| 状态 | ❌ **未实现** |
-| PN532 错误 | `'PN532_HSU' object has no attribute 'halt'` |
-| CLRC663 错误 | `'CLRC663' object has no attribute 'halt'` |
-
----
-
-## 13. carrot-nfc_select
-
-| 项目 | 结果 |
-|------|------|
-| 状态 | ❌ **参数不匹配** |
-| PN532 错误 | `PN532_HSU.select() got an unexpected keyword argument 'cl_level'` |
-| CLRC663 错误 | `CLRC663.select() got an unexpected keyword argument 'cl_level'` |
-
-> MCP 层定义了 `cl_level` 和 `uid` 参数，但底层驱动方法签名不接受这些参数。
-
----
-
-## 14. carrot-nfc_anticoll
-
-| 项目 | 结果 |
-|------|------|
-| 状态 | ❌ **未实现** |
-| PN532 错误 | `'PN532_HSU' object has no attribute 'anticoll'` |
-| CLRC663 错误 | `'CLRC663' object has no attribute 'anticoll'` |
-
----
-
-## 15. carrot-nfc_script
-
-### 15.1 正常流程
+### 7.4 last_tx_bits (短帧)
 
 | 测试用例 | PN532 | CLRC663 |
 |----------|:-----:|:-------:|
-| find → exchange × 2 | ✅ | ✅ |
-| exchange × 2（无 find） | ✅ | ✅ |
+| REQA via transceive (`data="26", last_tx_bits=7, tx_crc=False, rx_crc=False`) | ✅ `data="4400"` | ✅ `data="4400"` |
+
+### 7.5 last_rx_bits 不一致
+
+| 读卡器 | last_rx_bits (READ 响应) |
+|--------|------------------------|
+| PN532 | `0` |
+| CLRC663 | `8` |
+
+> ❌ 两读卡器对同一字节对齐响应报告不同: PN532=`0`, CLRC663=`8`。上层依赖 `last_rx_bits` 判断响应完整性时行为不一致。
+
+---
+
+## 8. carrot-nfc_reqa
+
+| 项目 | 结果 |
+|------|------|
+| 状态 | ✅ PASS |
+| PN532 | `{status: "ok", data: "4400", length: 2}` |
+| CLRC663 | `{status: "ok", data: "4400", length: 2}` |
+
+---
+
+## 9. carrot-nfc_wupa
+
+| 项目 | 结果 |
+|------|------|
+| 状态 | ✅ PASS |
+| PN532 | `{status: "ok", data: "4400", length: 2}` |
+| CLRC663 | `{status: "ok", data: "4400", length: 2}` |
+
+---
+
+## 10. carrot-nfc_halt
+
+| 项目 | 结果 |
+|------|------|
+| 状态 | ✅ PASS |
+
+---
+
+## 11. carrot-nfc_select
+
+### 11.1 CL1 SELECT
+
+| 测试用例 | PN532 | CLRC663 |
+|----------|:-----:|:-------:|
+| `cl_level=1, uid="885AD5E3E4"` / `"885AF53314"` | ✅ `data="04"` (SAK=0x04) | ✅ `data="04"` (SAK=0x04) |
+
+### 11.2 CL2 SELECT
+
+| 测试用例 | PN532 | CLRC663 |
+|----------|:-----:|:-------:|
+| 完整流程: reqa → anticoll CL1 → select CL1 → anticoll CL2 → select CL2 | ✅ `data="00"` (SAK=0x00) | ✅ `data="00"` (SAK=0x00) |
+| CL2 SELECT 后 transceive READ | ✅ 返回正确页面数据 | ✅ 返回正确页面数据 |
+
+> ⚠️ `data="00"` 是 SAK=0x00（ISO 14443-3A 最后级联层标准响应），**不是 NACK**。但驱动层 trace 将其标注为 `[NACK — Not authenticated / Parity error]`，为驱动层误判。
+
+---
+
+## 12. carrot-nfc_anticoll
+
+### 12.1 基本 anticoll
+
+| 读卡器 | 结果 | data | bits |
+|--------|:----:|------|------|
+| PN532 | ✅ | `885AD5E3E4` | `0` |
+| CLRC663 | ✅ | `885AF53314` | `8` |
+
+> ❌ 两读卡器 bits 报告不一致: PN532=`0`, CLRC663=`8`。均为字节对齐响应，但返回值不同。
+
+### 12.2 anticoll uid_prefix
+
+| 测试用例 | PN532 | CLRC663 |
+|----------|:-----:|:-------:|
+| `cl_level=1, nvb=33, uid_prefix="5A"` | ❌ "No response" | ❌ "No response" |
+
+> ❌ `uid_prefix` 参数在两读卡器上均返回 "No response"。可能原因: (1) 单卡环境无碰撞场景; (2) `nvb` + `uid_prefix` 组合帧构造异常; (3) 驱动层未正确处理 partial UID anticollision。
+
+### 12.3 anticoll bits 差异
+
+| 读卡器 | bits |
+|--------|------|
+| PN532 | `0` |
+| CLRC663 | `8` |
+
+> ❌ 同 12.1，两读卡器 bits 返回值不一致。
+
+---
+
+## 13. carrot-nfc_script
+
+### 13.1 正常流程
+
+| 测试用例 | PN532 | CLRC663 |
+|----------|:-----:|:-------:|
+| find → transceive × 2 | ✅ | ✅ |
 | field_off → wait → field_on → find → transceive × 2 | ✅ | ✅ |
-| find → transceive × 6（全页读取 page 0-23） | ✅ | ✅ |
+| find → transceive × 16 (全页读取 page 0-15) | ✅ | ✅ |
+| reqa → anticoll → select → halt → wupa | ✅ | ✅ |
+| field_off → wait → field_on → find(low_level) → transceive × 2 | ✅ | ✅ |
+| reqa → anticoll CL1 → select CL1 → anticoll CL2 → select CL2 → transceive | ✅ | ✅ |
 
-### 15.2 错误处理
-
-| 测试用例 | PN532 | CLRC663 |
-|----------|:-----:|:-------:|
-| find → transceive → transceive(invalid hex) | ✅ 中止并报错 | ✅ 中止并报错 |
-
-### 15.3 未实现 op
+### 13.2 expect 匹配
 
 | 测试用例 | PN532 | CLRC663 |
 |----------|:-----:|:-------:|
-| find → exchange → halt | ❌ halt 失败 | ❌ halt 失败 |
+| find(expect=UID) → transceive(expect=正确数据) | ✅ matched=true | ✅ matched=true |
+
+### 13.3 expect_bits 位级匹配
+
+| 测试用例 | PN532 | CLRC663 |
+|----------|:-----:|:-------:|
+| reqa(expect="4400", expect_bits=4) | ✅ matched=true | ✅ matched=true |
+| reqa(expect="4401", expect_bits=4, on_mismatch="continue") | ✅ matched=false | ✅ matched=false |
+
+### 13.4 expect 不匹配 + on_mismatch
+
+| 测试用例 | PN532 | CLRC663 |
+|----------|:-----:|:-------:|
+| transceive(expect=错误值, on_mismatch="continue") → 继续执行 | ✅ matched=false, 后续步骤继续 | ✅ 同 |
+| transceive(expect=错误值, on_mismatch="stop") → 中止 | ✅ matched=false, status="error" | ✅ 同 |
+
+### 13.5 错误处理
+
+| 测试用例 | PN532 | CLRC663 |
+|----------|:-----:|:-------:|
+| transceive(invalid hex) | ✅ "Invalid hex string" | ✅ 同 |
+| unknown op | ✅ "Unknown op: xxx" | ✅ 同 |
+
+### 13.6 wait 时序
+
+| 测试用例 | PN532 | CLRC663 |
+|----------|:-----:|:-------:|
+| field_off → wait(1500ms) → field_on → reqa | ✅ | ⚠️ 未测试 |
+
+> ⚠️ `wait` 仅在 PN532 上验证，CLRC663 未覆盖。
+
+### 13.7 全页读取边界
+
+| 测试用例 | PN532 | CLRC663 |
+|----------|:-----:|:-------:|
+| READ page 0x3C (超出 NTAG213 范围) | ✅ "No response" | ✅ "No response" |
 
 ---
 
-## 16. carrot-nfc_trace_get
+## 14. carrot-nfc_trace_get
 
 | 测试用例 | PN532 | CLRC663 |
 |----------|:-----:|:-------:|
 | 全部日志 | ✅ | ✅ |
 | `level="DEBUG"` 过滤 | ✅ | ✅ |
 | `layer="DRIVER"` 过滤 | ✅ | ✅ |
-| `layer="PROTOCOL"` 过滤 | ✅ (空) | ✅ (有内容) |
-
-> **差异**: CLRC663 的 PROTOCOL 层有 TX/RX 原始数据和命令解析日志；PN532 只有 DRIVER 层。
+| `layer="PROTOCOL"` 过滤 | ✅ | ✅ |
 
 ---
 
-## 17. carrot-nfc_trace_clear
+## 15. carrot-nfc_trace_clear
 
 | 项目 | 结果 |
 |------|------|
 | 状态 | ✅ PASS |
-| 确认 | clear 后 trace_get 返回 `[]` |
 
 ---
 
 ## 问题汇总
 
-### 5 个未实现/不兼容的方法
-
-| 方法 | 问题 | 严重性 |
-|------|------|--------|
-| `reqa` | 底层驱动未实现 | 🔴 功能缺失 |
-| `wupa` | 底层驱动未实现 | 🔴 功能缺失 |
-| `halt` | 底层驱动未实现 | 🔴 功能缺失 |
-| `anticoll` | 底层驱动未实现 | 🔴 功能缺失 |
-| `select` | MCP 层参数与底层签名不匹配 | 🔴 接口不兼容 |
-
-### 2 个读卡器行为差异
-
-| 差异点 | PN532 | CLRC663 |
-|--------|-------|---------|
-| transceive 失败时 | 返回空字符串（静默失败） | 返回 `"No response from card"`（明确错误） |
-| trace PROTOCOL 层 | 无内容 | 有 TX/RX 原始数据 |
-
-### 建议
-
-1. **实现 reqa/wupa/halt/anticoll/select**: 补充底层驱动的 ISO14443-3A 基础方法
-2. **修复 select 参数签名**: MCP 层参数需与底层驱动对齐
-3. **统一错误处理**: PN532 的 transceive 失败应返回明确错误而非空字符串
-4. **script 中校验 op 可用性**: 执行未实现 op 前应提前报错
+| # | 问题 | 严重性 | 位置 |
+|---|------|:------:|------|
+| 1 | `transceive` last_rx_bits 两读卡器不一致 (PN532=`0`, CLRC663=`8`) | ⚠️ | §7.5 |
+| 2 | `anticoll` bits 两读卡器不一致 (PN532=`0`, CLRC663=`8`) | ⚠️ | §12.1 |
+| 3 | `find` 高级模式 ATQA 字节序不同 (PN532=`0044`, CLRC663=`4400`) | ⚠️ | §6.1 |
+| 4 | `find` PN532 高级/低级模式 ATQA 不一致 (`0044` vs `4400`) | ⚠️ | §6.1/6.2 |
+| 5 | `transceive` tx_crc=False 无错误提示，与"卡片不存在"不可区分 | ⚠️ | §7.3 |
+| 6 | `transceive` rx_crc=False 返回含 CRC 的额外 2 字节 | ⚠️ | §7.3 |
+| 7 | `select` CL2 驱动 trace 误标 `[NACK]`，实际为 SAK=0x00 | ⚠️ | §11.2 |
+| 8 | `anticoll` uid_prefix 两读卡器均返回 "No response" | ❌ | §12.2 |
+| 9 | `script` wait 仅 PN532 验证，CLRC663 未覆盖 | ⚠️ | §13.6 |
+| 10 | `connect` transport 仅支持 serial，无法测试其他传输类型 | ⚠️ | §3 |
