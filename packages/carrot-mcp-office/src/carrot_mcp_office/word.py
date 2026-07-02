@@ -41,11 +41,14 @@ def inspect(path: str) -> dict:
     """Inspect document structure (paragraphs, tables, images, styles).
 
     Args:
-        path: Absolute path to the .docx file.
+        path: Absolute path to the .doc/.docx file.
     """
     try:
+        path, err = _handle_docx(path)
+        if err:
+            return err
         doc = Document(path)
-        paragraphs = [{"index": i, "text": p.text[:100], "style": p.style.name} for i, p in enumerate(doc.paragraphs)]
+        paragraphs = [{"index": i, "text": p.text, "style": p.style.name} for i, p in enumerate(doc.paragraphs) if p.text.strip()]
         tables = [{"index": i, "rows": len(t.rows), "cols": len(t.columns)} for i, t in enumerate(doc.tables)]
         image_count = 0
         for p in doc.paragraphs:
@@ -56,6 +59,7 @@ def inspect(path: str) -> dict:
         return {
             "status": "ok",
             "path": path,
+            "total_paragraphs": len(doc.paragraphs),
             "paragraph_count": len(doc.paragraphs),
             "table_count": len(doc.tables),
             "image_count": image_count,
@@ -72,7 +76,7 @@ def insert_para(path: str, text: str, index: int | None = None) -> dict:
     """Insert a paragraph at the specified position.
 
     Args:
-        path: Absolute path to the .docx file.
+        path: Absolute path to the .doc/.docx file.
         text: Paragraph text content.
         index: Position (0-based) to insert at. None appends at end.
     """
@@ -98,7 +102,7 @@ def modify_para(path: str, index: int, text: str) -> dict:
     """Modify an existing paragraph's text.
 
     Args:
-        path: Absolute path to the .docx file.
+        path: Absolute path to the .doc/.docx file.
         index: Paragraph index (0-based).
         text: New text content.
     """
@@ -137,7 +141,7 @@ def format_para(
     """Format a paragraph.
 
     Args:
-        path: Absolute path to the .docx file.
+        path: Absolute path to the .doc/.docx file.
         index: Paragraph index (0-based).
         style: Style name (e.g. "Heading 1", "Normal", "Title").
         alignment: Text alignment (left, center, right, justify).
@@ -189,7 +193,7 @@ def delete_para(path: str, index: int) -> dict:
     """Delete a paragraph.
 
     Args:
-        path: Absolute path to the .docx file.
+        path: Absolute path to the .doc/.docx file.
         index: Paragraph index (0-based).
     """
     try:
@@ -213,7 +217,7 @@ def insert_table(path: str, rows: int, cols: int, data: list[list] | None = None
     """Insert a table.
 
     Args:
-        path: Absolute path to the .docx file.
+        path: Absolute path to the .doc/.docx file.
         rows: Number of rows.
         cols: Number of columns.
         data: Optional 2D array of cell values.
@@ -247,7 +251,7 @@ def modify_table(path: str, table_index: int, row: int, col: int, text: str) -> 
     """Modify a table cell.
 
     Args:
-        path: Absolute path to the .docx file.
+        path: Absolute path to the .doc/.docx file.
         table_index: Table index (0-based).
         row: Row index (0-based).
         col: Column index (0-based).
@@ -278,7 +282,7 @@ def format_table(path: str, table_index: int, style: str | None = None) -> dict:
     """Format a table.
 
     Args:
-        path: Absolute path to the .docx file.
+        path: Absolute path to the .doc/.docx file.
         table_index: Table index (0-based).
         style: Table style name (e.g. "Table Grid", "Light Shading").
     """
@@ -306,7 +310,7 @@ def delete_table(path: str, table_index: int) -> dict:
     """Delete a table.
 
     Args:
-        path: Absolute path to the .docx file.
+        path: Absolute path to the .doc/.docx file.
         table_index: Table index (0-based).
     """
     try:
@@ -330,7 +334,7 @@ def insert_image(path: str, image_path: str, index: int | None = None, width: fl
     """Insert an image into the document.
 
     Args:
-        path: Absolute path to the .docx file.
+        path: Absolute path to the .doc/.docx file.
         image_path: Absolute path to the image file.
         index: Paragraph position (0-based) to insert at. None appends at end.
         width: Image width in inches. None uses original size.
@@ -362,7 +366,7 @@ def delete_image(path: str, image_index: int) -> dict:
     """Delete an inline image by its occurrence index.
 
     Args:
-        path: Absolute path to the .docx file.
+        path: Absolute path to the .doc/.docx file.
         image_index: Image occurrence index (0-based, counting across all paragraphs).
     """
     try:
@@ -464,12 +468,14 @@ def _parse_sections(raw: list, max_index: int) -> list[int]:
 def get_outline(path: str) -> dict:
     """Get document outline (heading hierarchy).
 
-    Returns a hierarchical tree of headings (Heading 1–9) with their
-    paragraph indices. Use the returned indices with get_content_by_outline
-    to fetch section content.
+    Returns both a hierarchical tree and a flat list of headings (Heading 1–9).
+    Each node contains: level, title, index (paragraph position), parent.
+    To fetch section content, pass the flat array's 0-based position indices
+    (0, 1, 2, ...) to get_content_by_outline — NOT the `index` field, which
+    is the paragraph number in the document.
 
     Args:
-        path: Absolute path to the .docx file.
+        path: Absolute path to the .doc/.docx file.
     """
     try:
         doc = Document(path)
@@ -508,16 +514,19 @@ def get_outline(path: str) -> dict:
 def get_content_by_outline(path: str, sections: list) -> list:
     """Get content for specific outline sections.
 
-    Use get_outline first to obtain section indices, then pass them here
-    to fetch paragraphs, tables, and images for each section.
+    Use get_outline first to obtain section list, then pass section
+    indices here to fetch paragraphs, tables, and images for each section.
     Images are returned as ImageContent attachments (not embedded in JSON).
 
     Args:
-        path: Absolute path to the .docx file.
-        sections: Indices to fetch. Supports:
-            - int list: [0, 2, 5]
-            - range string: ["0-9"] → 0,1,...,9
-            - mixed: ["0-4", 6, 8] → 0,1,2,3,4,6,8
+        path: Absolute path to the .doc/.docx file.
+        sections: Indices to fetch. These are indices into the `flat`
+            array returned by get_outline (NOT the `index` field inside
+            each node — that is the paragraph position in the document).
+            Supports:
+            - int list: [0, 2, 5] → flat[0], flat[2], flat[5]
+            - range string: ["0-9"] → flat[0] through flat[9]
+            - mixed: ["0-4", 6, 8] → flat[0]..flat[4], flat[6], flat[8]
 
     Returns:
         list[TextContent | ImageContent] — first element is JSON metadata,
@@ -573,8 +582,6 @@ def get_content_by_outline(path: str, sections: list) -> list:
                         break
                 if t_index is not None and start <= t_index < end:
                     tables.append({
-                        "rows": len(t.rows),
-                        "cols": len(t.columns),
                         "data": [[cell.text for cell in row.cells] for row in t.rows],
                     })
 

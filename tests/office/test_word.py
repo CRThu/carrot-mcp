@@ -94,7 +94,7 @@ def test_inspect():
         insert_table(path, 2, 2)
         result = word_inspect(path)
         assert result["status"] == "ok"
-        assert result["paragraph_count"] >= 1
+        assert result["total_paragraphs"] >= 1
         assert result["table_count"] == 1
     finally:
         _cleanup(path)
@@ -165,7 +165,7 @@ def test_delete_para():
         assert result["status"] == "ok"
         assert result["version"] >= 1
         info = word_inspect(path)
-        assert info["paragraph_count"] == 1
+        assert info["total_paragraphs"] == 1
     finally:
         _cleanup(path)
         if os.path.exists(path):

@@ -205,9 +205,9 @@ Cache Layer (cache.py — JSON: %APPDATA%/carrot-mcp/pdf/<hash>.json)
 
 | Tool | Description |
 |------|-------------|
-| `inspect` | Inspect document structure (paragraphs, tables, images, styles) |
-| `get_outline` | Get document outline (heading hierarchy with paragraph indices) |
-| `get_content_by_outline` | Get paragraphs, tables, and images for specific outline sections |
+| `inspect` | Inspect document structure (paragraphs, tables, images, styles). Only returns non-empty paragraphs. Accepts `.doc` (auto-converted). |
+| `get_outline` | Get document outline as tree + flat list. Use flat array indices (0-based position) with `get_content_by_outline`. Accepts `.doc`. |
+| `get_content_by_outline` | Get paragraphs, tables, and images for sections identified by flat outline indices (NOT the `index` field in nodes). Accepts `.doc`. |
 | `insert_para` | Insert a paragraph |
 | `modify_para` | Modify paragraph text |
 | `format_para` | Format a paragraph (style, alignment, font) |
@@ -218,6 +218,8 @@ Cache Layer (cache.py — JSON: %APPDATA%/carrot-mcp/pdf/<hash>.json)
 | `delete_table` | Delete a table |
 | `insert_image` | Insert an image |
 | `delete_image` | Delete an inline image |
+
+All Word tools accept `.doc`/`.docx` files (`.doc` auto-converted on Windows).
 
 ### Excel Tools
 
@@ -232,6 +234,8 @@ Cache Layer (cache.py — JSON: %APPDATA%/carrot-mcp/pdf/<hash>.json)
 | `read_chart` / `write_chart` | Chart operations |
 | `format_range` | Format cells (font, color, alignment, merge/unmerge) |
 
+All Excel tools accept `.xls`/`.xlsx` files (`.xls` auto-converted on Windows).
+
 ### Architecture
 
 ```
@@ -244,7 +248,7 @@ Backup Layer (backup.py — auto-versioning on every write)
 ```
 
 - `get_outline` extracts Heading 1–9 styles into a hierarchical tree with `children` and a flat list with `parent` tracking
-- `get_content_by_outline` takes flat outline indices (supports ranges like `"0-9"`, mixed `["0-4",6,8]`), returns paragraphs (text + index), tables (full data), and image counts for each section
+- `get_content_by_outline` takes flat array position indices (0, 1, 2, ...) from `get_outline`'s `flat` return — NOT the `index` field in each node (that's the paragraph position in the document). Supports ranges like `"0-9"`, mixed `["0-4",6,8]`. Returns paragraphs (non-empty text + index), tables (2D cell values), and images as ImageContent attachments.
 - Table position detection walks `doc.element.body` children to find the XML index, matching against paragraph range
 - `_heading_level()` parses "Heading N" style names; non-standard heading styles are ignored
 

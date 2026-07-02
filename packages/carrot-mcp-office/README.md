@@ -35,11 +35,13 @@ Carrot MCP Office Server — Excel and Word automation via MCP.
 | `write_chart` | Create a chart (bar, line, pie, scatter) |
 | `format_range` | Format cells (font, color, alignment, merge/unmerge) |
 
+All Excel tools accept `.xls`/`.xlsx` files (`.xls` auto-converted on Windows).
+
 ### Word Tools
 
 | Tool | Description |
 |------|-------------|
-| `inspect` | Inspect document structure |
+| `inspect` | Inspect document structure (paragraphs, tables, images, styles). Only returns non-empty paragraphs. |
 | `insert_para` | Insert a paragraph |
 | `modify_para` | Modify paragraph text |
 | `format_para` | Format a paragraph (style, alignment, font) |
@@ -50,8 +52,10 @@ Carrot MCP Office Server — Excel and Word automation via MCP.
 | `delete_table` | Delete a table |
 | `insert_image` | Insert an image |
 | `delete_image` | Delete an inline image |
-| `get_outline` | Get document outline (heading hierarchy with paragraph indices) |
-| `get_content_by_outline` | Get paragraphs, tables, and images for specific outline sections |
+| `get_outline` | Get document outline as tree + flat list. Use flat array indices (0-based position) with `get_content_by_outline`. |
+| `get_content_by_outline` | Get paragraphs, tables, and images for sections identified by flat outline indices. Supports int list, range strings like `"0-4"`, and mixed. |
+
+All Word tools accept `.doc`/`.docx` files (`.doc` auto-converted on Windows).
 
 ### Backup Tools
 

@@ -46,7 +46,7 @@ def workbook_metadata(path: str) -> dict:
     """Get workbook metadata (sheet names, properties).
 
     Args:
-        path: Absolute path to the .xlsx file.
+        path: Absolute path to the .xls/.xlsx file.
     """
     try:
         wb = openpyxl.load_workbook(path, read_only=True)
@@ -73,7 +73,7 @@ def workbook_search(path: str, sheet: str, query: str) -> dict:
     """Search for values in a sheet.
 
     Args:
-        path: Absolute path to the .xlsx file.
+        path: Absolute path to the .xls/.xlsx file.
         sheet: Sheet name to search in.
         query: String to search for (case-insensitive substring match).
     """
@@ -100,7 +100,7 @@ def create_sheet(path: str, name: str, index: int | None = None) -> dict:
     """Create a new sheet in the workbook. Creates the workbook if it doesn't exist.
 
     Args:
-        path: Absolute path to the .xlsx file.
+        path: Absolute path to the .xls/.xlsx file.
         name: Name for the new sheet.
         index: Position (0-based). None appends at end.
     """
@@ -129,7 +129,7 @@ def rename_sheet(path: str, old_name: str, new_name: str) -> dict:
     """Rename a sheet.
 
     Args:
-        path: Absolute path to the .xlsx file.
+        path: Absolute path to the .xls/.xlsx file.
         old_name: Current sheet name.
         new_name: New sheet name.
     """
@@ -158,7 +158,7 @@ def delete_sheet(path: str, name: str) -> dict:
     """Delete a sheet from the workbook.
 
     Args:
-        path: Absolute path to the .xlsx file.
+        path: Absolute path to the .xls/.xlsx file.
         name: Sheet name to delete.
     """
     try:
@@ -185,7 +185,7 @@ def insert_rows(path: str, sheet: str, start: int, count: int = 1) -> dict:
     """Insert rows into a sheet.
 
     Args:
-        path: Absolute path to the .xlsx file.
+        path: Absolute path to the .xls/.xlsx file.
         sheet: Sheet name.
         start: Row number to start inserting at (1-based).
         count: Number of rows to insert.
@@ -213,7 +213,7 @@ def delete_rows(path: str, sheet: str, start: int, count: int = 1) -> dict:
     """Delete rows from a sheet.
 
     Args:
-        path: Absolute path to the .xlsx file.
+        path: Absolute path to the .xls/.xlsx file.
         sheet: Sheet name.
         start: Row number to start deleting at (1-based).
         count: Number of rows to delete.
@@ -241,7 +241,7 @@ def insert_columns(path: str, sheet: str, start: int, count: int = 1) -> dict:
     """Insert columns into a sheet.
 
     Args:
-        path: Absolute path to the .xlsx file.
+        path: Absolute path to the .xls/.xlsx file.
         sheet: Sheet name.
         start: Column number to start inserting at (1-based).
         count: Number of columns to insert.
@@ -269,7 +269,7 @@ def delete_columns(path: str, sheet: str, start: int, count: int = 1) -> dict:
     """Delete columns from a sheet.
 
     Args:
-        path: Absolute path to the .xlsx file.
+        path: Absolute path to the .xls/.xlsx file.
         sheet: Sheet name.
         start: Column number to start deleting at (1-based).
         count: Number of columns to delete.
@@ -297,7 +297,7 @@ def read_range(path: str, sheet: str, start: str, end: str | None = None) -> dic
     """Read cell values from a range.
 
     Args:
-        path: Absolute path to the .xlsx file.
+        path: Absolute path to the .xls/.xlsx file.
         sheet: Sheet name.
         start: Start cell reference (e.g. "A1").
         end: End cell reference (e.g. "B2"). None reads single cell.
@@ -333,7 +333,7 @@ def write_range(
     """Write a 2D array of values to a range.
 
     Args:
-        path: Absolute path to the .xlsx file.
+        path: Absolute path to the .xls/.xlsx file.
         sheet: Sheet name.
         start: Start cell reference (e.g. "A1").
         data: 2D array of values to write. Formulas should be strings starting with "=".
@@ -379,7 +379,7 @@ def copy_range(
     """Copy a range of cells to another location.
 
     Args:
-        path: Absolute path to the .xlsx file.
+        path: Absolute path to the .xls/.xlsx file.
         sheet: Sheet name.
         source_start: Source range start cell (e.g. "A1").
         source_end: Source range end cell (e.g. "B2").
@@ -428,7 +428,7 @@ def delete_range(path: str, sheet: str, start: str, end: str) -> dict:
     """Clear cell contents in a range (keeps formatting).
 
     Args:
-        path: Absolute path to the .xlsx file.
+        path: Absolute path to the .xls/.xlsx file.
         sheet: Sheet name.
         start: Start cell reference (e.g. "A1").
         end: End cell reference (e.g. "B2").
@@ -459,7 +459,7 @@ def read_chart(path: str, sheet: str) -> dict:
     """Read chart information from a sheet.
 
     Args:
-        path: Absolute path to the .xlsx file.
+        path: Absolute path to the .xls/.xlsx file.
         sheet: Sheet name.
     """
     try:
@@ -494,7 +494,7 @@ def write_chart(
     """Create a chart in the sheet.
 
     Args:
-        path: Absolute path to the .xlsx file.
+        path: Absolute path to the .xls/.xlsx file.
         sheet: Sheet name.
         chart_type: One of "bar", "line", "pie", "scatter".
         data_range: Data range reference (e.g. "A1:B5").
@@ -553,7 +553,7 @@ def format_range(
     """Format a range of cells.
 
     Args:
-        path: Absolute path to the .xlsx file.
+        path: Absolute path to the .xls/.xlsx file.
         sheet: Sheet name.
         start: Start cell reference (e.g. "A1").
         end: End cell reference (e.g. "B2").
