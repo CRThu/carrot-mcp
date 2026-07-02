@@ -48,12 +48,10 @@ def render_page_as_image(pdf_path: str, page_num: int, dpi: int = 300) -> str:
         zoom = dpi / 72
         mat = pymupdf.Matrix(zoom, zoom)
         pix = page.get_pixmap(matrix=mat)
-        tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
-        try:
-            pix.save(tmp.name)
-        finally:
-            tmp.close()
-        return tmp.name
+        fd, image_path = tempfile.mkstemp(suffix=".png")
+        os.close(fd)
+        pix.save(image_path)
+        return image_path
     finally:
         doc.close()
 
@@ -81,7 +79,10 @@ def ocr_page(pdf_path: str, page_num: int) -> list[dict]:
     except Exception as e:
         raise RuntimeError(f"OCR failed: {e}") from e
     finally:
-        os.unlink(image_path)
+        try:
+            os.unlink(image_path)
+        except OSError:
+            pass
 
 
 def parse_page_content(text: str, image_dir: str) -> tuple[list[dict], list[dict]]:
