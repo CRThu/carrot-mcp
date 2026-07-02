@@ -6,33 +6,37 @@ import time
 from collections import deque
 from importlib.metadata import version as pkg_version
 
+import nfc
 from loguru import logger
 from mcp.server.fastmcp import FastMCP
+from nfctester.drivers.card_reader import CardInfo
 from nfctester.registry import CardReaderRegistry, TransportRegistry
 
 mcp = FastMCP("carrot-mcp-nfc")
-
-_reader = None
-_connected = False
 
 _trace_buffer: deque[dict] = deque(maxlen=500)
 _trace_sink_id: int | None = None
 
 
 def _cleanup():
-    global _reader, _connected, _trace_sink_id
-    if _connected and _reader is not None:
-        try:
-            _reader.disconnect()
-        except Exception:
-            pass
-    _reader = None
-    _connected = False
+    global _trace_sink_id
+    try:
+        nfc.close()
+    except Exception:
+        pass
     _remove_trace_sink()
 
 
 def _not_connected() -> dict:
     return {"status": "error", "message": "NFC reader not connected. Call connect() first."}
+
+
+def _is_connected() -> bool:
+    try:
+        nfc.get_reader()
+        return True
+    except Exception:
+        return False
 
 
 def _setup_trace_sink():
@@ -105,20 +109,14 @@ def connect(port: str, reader_type: str = "pn532", transport: str = "serial") ->
     Returns:
         {status, port, reader_type, transport} or {status, message} on error
     """
-    global _reader, _connected
-
-    if _connected:
+    if _is_connected():
         return {"status": "ok", "message": "Already connected"}
 
     try:
-        _reader = CardReaderRegistry.create(reader_type, transport=transport, port=port)
-        _reader.connect()
-        _connected = True
+        nfc.connect(port=port, reader_type=reader_type)
         _setup_trace_sink()
         return {"status": "ok", "port": port, "reader_type": reader_type, "transport": transport}
     except Exception as e:
-        _reader = None
-        _connected = False
         return {"status": "error", "message": str(e)}
 
 
@@ -129,16 +127,13 @@ def disconnect() -> dict:
     Returns:
         {status}
     """
-    global _reader, _connected
-    if not _connected:
+    if not _is_connected():
         return {"status": "error", "message": "Not connected"}
 
     try:
-        _reader.disconnect()
+        nfc.close()
     except Exception:
         pass
-    _reader = None
-    _connected = False
     _remove_trace_sink()
     return {"status": "ok"}
 
@@ -153,54 +148,47 @@ def find(low_level: bool = False) -> dict:
     Returns:
         {status, uid, atq, sak} or {status, message} on error
     """
-    if not _connected or _reader is None:
+    if not _is_connected():
         return _not_connected()
 
     try:
-        if not low_level:
-            card_info = _reader.find()
-        else:
+        if low_level:
             card_info = _low_level_find()
+        else:
+            card_info = nfc.active()
 
         if card_info is None:
             return {"status": "error", "message": "No card found"}
 
         return {
             "status": "ok",
-            "uid": card_info["uid"].hex().upper(),
-            "atq": card_info["atq"].hex().upper(),
-            "sak": hex(card_info["sak"]),
+            "uid": card_info.uid.hex().upper(),
+            "atq": card_info.atq.hex().upper(),
+            "sak": hex(card_info.sak),
         }
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
 
 def _low_level_find():
-    if _reader is None:
-        return None
+    reader = nfc.get_reader()
 
-    res_reqa = _reader.reqa()
-    if not res_reqa:
+    res_reqa = nfc.reqa()
+    if not res_reqa or res_reqa.data is None:
         return None
     atq = res_reqa.data
 
     full_uid = []
     sak = 0
     for cl in [1, 2, 3]:
-        try:
-            res = _reader.anticoll(cl_level=cl, nvb=0x20)
-        except Exception:
-            return None
-        if not res or not res.data:
+        res = nfc.anticoll(cl_level=cl, nvb=0x20)
+        if not res or res.data is None:
             return None
 
         data = res.data
         has_next = (data[0] == 0x88)
-        uid_to_select = data[0:5]
-        try:
-            sak_res = _reader.select(cl_level=cl, uid=uid_to_select)
-        except Exception:
-            return None
+        uid_to_select = list(data[0:5])
+        sak_res = nfc.select(cl_level=cl, uid=uid_to_select)
 
         if has_next:
             full_uid.extend(data[1:4])
@@ -209,11 +197,7 @@ def _low_level_find():
             sak = sak_res[0] if sak_res else 0
             break
 
-    return {
-        "uid": bytes(full_uid),
-        "atq": bytes(atq),
-        "sak": sak,
-    }
+    return CardInfo(uid=bytes(full_uid), atq=bytes(atq), sak=sak)
 
 
 @mcp.tool()
@@ -235,7 +219,7 @@ def transceive(
     Returns:
         {status, data, length, last_rx_bits} or {status, message} on error
     """
-    if not _connected or _reader is None:
+    if not _is_connected():
         return _not_connected()
 
     try:
@@ -244,46 +228,18 @@ def transceive(
         return {"status": "error", "message": "Invalid hex string"}
 
     try:
-        _reader.set_crc(tx_crc, rx_crc)
-        res = _reader.transceive(raw, last_tx_bits=last_tx_bits)
-        if res is None:
+        if last_tx_bits != 0:
+            res = nfc.transceive_bits(list(raw), last_tx_bits=last_tx_bits, tx_crc=tx_crc, rx_crc=rx_crc)
+        else:
+            res = nfc.get_reader().transceive(raw, tx_crc=tx_crc, rx_crc=rx_crc)
+
+        if res is None or res.data is None:
             return {"status": "error", "message": "No response from card"}
         return {
             "status": "ok",
-            "data": res.hex().upper(),
-            "length": len(res),
-            "last_rx_bits": _reader.last_rx_bits,
-        }
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
-
-
-@mcp.tool()
-def exchange(data: str) -> dict:
-    """Send data via InDataExchange (auto CRC, target 1).
-
-    Args:
-        data: Hex string to send (e.g. "6007")
-
-    Returns:
-        {status, data, length} or {status, message} on error
-    """
-    if not _connected or _reader is None:
-        return _not_connected()
-
-    try:
-        raw = bytes.fromhex(data)
-    except ValueError:
-        return {"status": "error", "message": "Invalid hex string"}
-
-    try:
-        res = _reader.exchange(raw)
-        if res is None:
-            return {"status": "error", "message": "No response from card"}
-        return {
-            "status": "ok",
-            "data": res.hex().upper(),
-            "length": len(res),
+            "data": res.data.hex().upper(),
+            "length": len(res.data),
+            "last_rx_bits": res.rx_bits,
         }
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -296,16 +252,16 @@ def reqa() -> dict:
     Returns:
         {status, data, length} or {status, message} on error
     """
-    if not _connected or _reader is None:
+    if not _is_connected():
         return _not_connected()
 
     try:
-        res = _reader.reqa()
-        if res is None:
+        res = nfc.reqa()
+        if res is None or res.data is None:
             return {"status": "error", "message": "No response"}
         return {
             "status": "ok",
-            "data": bytes(res.data).hex().upper(),
+            "data": res.data.hex().upper(),
             "length": len(res.data),
         }
     except Exception as e:
@@ -319,16 +275,16 @@ def wupa() -> dict:
     Returns:
         {status, data, length} or {status, message} on error
     """
-    if not _connected or _reader is None:
+    if not _is_connected():
         return _not_connected()
 
     try:
-        res = _reader.wupa()
-        if res is None:
+        res = nfc.wupa()
+        if res is None or res.data is None:
             return {"status": "error", "message": "No response"}
         return {
             "status": "ok",
-            "data": bytes(res.data).hex().upper(),
+            "data": res.data.hex().upper(),
             "length": len(res.data),
         }
     except Exception as e:
@@ -342,11 +298,11 @@ def halt() -> dict:
     Returns:
         {status} or {status, message} on error
     """
-    if not _connected or _reader is None:
+    if not _is_connected():
         return _not_connected()
 
     try:
-        _reader.halt()
+        nfc.halt()
         return {"status": "ok"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -363,7 +319,7 @@ def select(cl_level: int, uid: str) -> dict:
     Returns:
         {status, data} or {status, message} on error
     """
-    if not _connected or _reader is None:
+    if not _is_connected():
         return _not_connected()
 
     try:
@@ -372,7 +328,7 @@ def select(cl_level: int, uid: str) -> dict:
         return {"status": "error", "message": "Invalid hex string"}
 
     try:
-        res = _reader.select(cl_level=cl_level, uid=list(uid_bytes))
+        res = nfc.select(cl_level=cl_level, uid=list(uid_bytes))
         if res is None:
             return {"status": "error", "message": "No response"}
         return {
@@ -395,7 +351,7 @@ def anticoll(cl_level: int = 1, nvb: int = 0x20, uid_prefix: str = "") -> dict:
     Returns:
         {status, data, bits} or {status, message} on error
     """
-    if not _connected or _reader is None:
+    if not _is_connected():
         return _not_connected()
 
     try:
@@ -404,13 +360,13 @@ def anticoll(cl_level: int = 1, nvb: int = 0x20, uid_prefix: str = "") -> dict:
         return {"status": "error", "message": "Invalid hex string"}
 
     try:
-        res = _reader.anticoll(cl_level=cl_level, nvb=nvb, uid_prefix=prefix)
-        if res is None:
+        res = nfc.anticoll(cl_level=cl_level, nvb=nvb, uid_prefix=prefix)
+        if res is None or res.data is None:
             return {"status": "error", "message": "No response"}
         return {
             "status": "ok",
-            "data": bytes(res.data).hex().upper(),
-            "bits": res.bits,
+            "data": res.data.hex().upper(),
+            "bits": res.rx_bits,
         }
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -423,10 +379,10 @@ def field_on() -> dict:
     Returns:
         {status}
     """
-    if not _connected or _reader is None:
+    if not _is_connected():
         return _not_connected()
     try:
-        _reader.set_rf_field(True)
+        nfc.field_on()
         return {"status": "ok"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -439,10 +395,10 @@ def field_off() -> dict:
     Returns:
         {status}
     """
-    if not _connected or _reader is None:
+    if not _is_connected():
         return _not_connected()
     try:
-        _reader.set_rf_field(False)
+        nfc.field_off()
         return {"status": "ok"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -469,6 +425,41 @@ def trace_get(level: str = "", layer: str = "") -> dict:
     return {"status": "ok", "entries": entries}
 
 
+def _apply_expect(result: dict, args: dict, data_hex: str) -> dict:
+    expect = args.get("expect")
+    expect_bits = args.get("expect_bits")
+
+    if expect is None and expect_bits is None:
+        return result
+
+    if expect is not None:
+        actual_bytes = bytes.fromhex(data_hex)
+        expected_bytes = bytes.fromhex(expect)
+
+        if expect_bits is not None and len(actual_bytes) > 0:
+            mask = (1 << expect_bits) - 1
+            actual_list = list(actual_bytes)
+            actual_list[-1] = actual_list[-1] & mask
+            matched = actual_list == list(expected_bytes)
+        else:
+            matched = data_hex.upper() == expect.upper()
+    else:
+        matched = True
+
+    if matched:
+        result["matched"] = True
+    else:
+        result["matched"] = False
+        if expect is not None:
+            result["expected"] = expect
+        if expect_bits is not None:
+            result["expect_bits"] = expect_bits
+        if args.get("on_mismatch", "stop") == "stop":
+            result["status"] = "error"
+            result["message"] = f"Expect mismatch: expected {expect}"
+    return result
+
+
 def _script_op_transceive(step: int, args: dict) -> dict:
     try:
         raw = bytes.fromhex(args.get("data", ""))
@@ -478,115 +469,78 @@ def _script_op_transceive(step: int, args: dict) -> dict:
     rx_crc = args.get("rx_crc", True)
     last_tx_bits = args.get("last_tx_bits", 0)
 
-    _reader.set_crc(tx_crc, rx_crc)
-    res = _reader.transceive(raw, last_tx_bits=last_tx_bits)
-    if res is None:
+    if last_tx_bits != 0:
+        res = nfc.transceive_bits(list(raw), last_tx_bits=last_tx_bits, tx_crc=tx_crc, rx_crc=rx_crc)
+    else:
+        res = nfc.get_reader().transceive(raw, tx_crc=tx_crc, rx_crc=rx_crc)
+
+    if res is None or res.data is None:
         return {"op": "transceive", "step": step, "status": "error", "message": "No response"}
 
     result = {
         "op": "transceive",
         "step": step,
         "status": "ok",
-        "data": res.hex().upper(),
-        "length": len(res),
-        "last_rx_bits": _reader.last_rx_bits,
+        "data": res.data.hex().upper(),
+        "length": len(res.data),
+        "last_rx_bits": res.rx_bits,
     }
 
-    expect = args.get("expect")
-    if expect is not None:
-        expected_raw = bytes.fromhex(expect)
-        if res == expected_raw:
-            result["matched"] = True
-        else:
-            result["matched"] = False
-            result["expected"] = expect
-            if args.get("on_mismatch", "stop") == "stop":
-                result["status"] = "error"
-                result["message"] = f"Expect mismatch: expected {expect}"
-
-    return result
-
-
-def _script_op_exchange(step: int, args: dict) -> dict:
-    try:
-        raw = bytes.fromhex(args.get("data", ""))
-    except ValueError:
-        return {"op": "exchange", "step": step, "status": "error", "message": "Invalid hex string"}
-    res = _reader.exchange(raw)
-    if res is None:
-        return {"op": "exchange", "step": step, "status": "error", "message": "No response"}
-
-    result = {
-        "op": "exchange",
-        "step": step,
-        "status": "ok",
-        "data": res.hex().upper(),
-        "length": len(res),
-    }
-
-    expect = args.get("expect")
-    if expect is not None:
-        expected_raw = bytes.fromhex(expect)
-        if res == expected_raw:
-            result["matched"] = True
-        else:
-            result["matched"] = False
-            result["expected"] = expect
-            if args.get("on_mismatch", "stop") == "stop":
-                result["status"] = "error"
-                result["message"] = f"Expect mismatch: expected {expect}"
-
-    return result
+    return _apply_expect(result, args, res.data.hex().upper())
 
 
 def _script_op_find(step: int, args: dict) -> dict:
     low_level = args.get("low_level", False)
-    if not low_level:
-        card_info = _reader.find()
-    else:
+    if low_level:
         card_info = _low_level_find()
+    else:
+        card_info = nfc.active()
 
     if card_info is None:
         return {"op": "find", "step": step, "status": "error", "message": "No card found"}
 
-    return {
+    result = {
         "op": "find",
         "step": step,
         "status": "ok",
-        "uid": card_info["uid"].hex().upper(),
-        "atq": card_info["atq"].hex().upper(),
-        "sak": hex(card_info["sak"]),
+        "uid": card_info.uid.hex().upper(),
+        "atq": card_info.atq.hex().upper(),
+        "sak": hex(card_info.sak),
     }
+
+    return _apply_expect(result, args, card_info.uid.hex().upper())
 
 
 def _script_op_reqa(step: int, args: dict) -> dict:
-    res = _reader.reqa()
-    if res is None:
+    res = nfc.reqa()
+    if res is None or res.data is None:
         return {"op": "reqa", "step": step, "status": "error", "message": "No response"}
-    return {
+    result = {
         "op": "reqa",
         "step": step,
         "status": "ok",
-        "data": bytes(res.data).hex().upper(),
+        "data": res.data.hex().upper(),
         "length": len(res.data),
     }
+    return _apply_expect(result, args, res.data.hex().upper())
 
 
 def _script_op_wupa(step: int, args: dict) -> dict:
-    res = _reader.wupa()
-    if res is None:
+    res = nfc.wupa()
+    if res is None or res.data is None:
         return {"op": "wupa", "step": step, "status": "error", "message": "No response"}
-    return {
+    result = {
         "op": "wupa",
         "step": step,
         "status": "ok",
-        "data": bytes(res.data).hex().upper(),
+        "data": res.data.hex().upper(),
         "length": len(res.data),
     }
+    return _apply_expect(result, args, res.data.hex().upper())
 
 
 def _script_op_halt(step: int, args: dict) -> dict:
-    _reader.halt()
+    nfc.halt()
     return {"op": "halt", "step": step, "status": "ok"}
 
 
@@ -596,15 +550,17 @@ def _script_op_select(step: int, args: dict) -> dict:
     except ValueError:
         return {"op": "select", "step": step, "status": "error", "message": "Invalid hex string"}
     cl_level = args.get("cl_level", 1)
-    res = _reader.select(cl_level=cl_level, uid=list(uid_bytes))
+
+    res = nfc.select(cl_level=cl_level, uid=list(uid_bytes))
     if res is None:
         return {"op": "select", "step": step, "status": "error", "message": "No response"}
-    return {
+    result = {
         "op": "select",
         "step": step,
         "status": "ok",
         "data": bytes(res).hex().upper(),
     }
+    return _apply_expect(result, args, bytes(res).hex().upper())
 
 
 def _script_op_anticoll(step: int, args: dict) -> dict:
@@ -616,25 +572,26 @@ def _script_op_anticoll(step: int, args: dict) -> dict:
     except ValueError:
         return {"op": "anticoll", "step": step, "status": "error", "message": "Invalid hex string"}
 
-    res = _reader.anticoll(cl_level=cl_level, nvb=nvb, uid_prefix=prefix)
-    if res is None:
+    res = nfc.anticoll(cl_level=cl_level, nvb=nvb, uid_prefix=prefix)
+    if res is None or res.data is None:
         return {"op": "anticoll", "step": step, "status": "error", "message": "No response"}
-    return {
+    result = {
         "op": "anticoll",
         "step": step,
         "status": "ok",
-        "data": bytes(res.data).hex().upper(),
-        "bits": res.bits,
+        "data": res.data.hex().upper(),
+        "bits": res.rx_bits,
     }
+    return _apply_expect(result, args, res.data.hex().upper())
 
 
 def _script_op_field_on(step: int, args: dict) -> dict:
-    _reader.set_rf_field(True)
+    nfc.field_on()
     return {"op": "field_on", "step": step, "status": "ok"}
 
 
 def _script_op_field_off(step: int, args: dict) -> dict:
-    _reader.set_rf_field(False)
+    nfc.field_off()
     return {"op": "field_off", "step": step, "status": "ok"}
 
 
@@ -646,7 +603,6 @@ def _script_op_wait(step: int, args: dict) -> dict:
 
 _SCRIPT_OPS = {
     "transceive": _script_op_transceive,
-    "exchange": _script_op_exchange,
     "find": _script_op_find,
     "reqa": _script_op_reqa,
     "wupa": _script_op_wupa,
@@ -665,17 +621,23 @@ def script(steps: list[dict]) -> list[dict]:
 
     Args:
         steps: List of operations. Each step is a dict with 'op' field:
-            - transceive: {"op": "transceive", "data": "<hex>", "tx_crc"?: bool, "rx_crc"?: bool, "last_tx_bits"?: int}
-            - exchange: {"op": "exchange", "data": "<hex>"}
-            - find: {"op": "find", "low_level"?: bool}
-            - reqa: {"op": "reqa"}
-            - wupa: {"op": "wupa"}
-            - halt: {"op": "halt"}
-            - select: {"op": "select", "cl_level": int, "uid": "<hex>"}
-            - anticoll: {"op": "anticoll", "cl_level"?: int, "nvb"?: int, "uid_prefix"?: "<hex>"}
-            - field_on: {"op": "field_on"}
-            - field_off: {"op": "field_off"}
-            - wait: {"op": "wait", "ms": int}
+            - {"op": "transceive", "data": "<hex>", "tx_crc"?: bool, "rx_crc"?: bool, "last_tx_bits"?: int, "expect"?: "<hex>", "expect_bits"?: int, "on_mismatch"?: "stop"|"continue"}
+            - {"op": "find", "low_level"?: bool, "expect"?: "<hex>", "expect_bits"?: int, "on_mismatch"?: "stop"|"continue"}
+            - {"op": "reqa", "expect"?: "<hex>", "expect_bits"?: int, "on_mismatch"?: "stop"|"continue"}
+            - {"op": "wupa", "expect"?: "<hex>", "expect_bits"?: int, "on_mismatch"?: "stop"|"continue"}
+            - {"op": "halt"}
+            - {"op": "select", "cl_level": int, "uid": "<hex>", "expect"?: "<hex>", "expect_bits"?: int, "on_mismatch"?: "stop"|"continue"}
+            - {"op": "anticoll", "cl_level"?: int, "nvb"?: int, "uid_prefix"?: "<hex>", "expect"?: "<hex>", "expect_bits"?: int, "on_mismatch"?: "stop"|"continue"}
+            - {"op": "field_on"}
+            - {"op": "field_off"}
+            - {"op": "wait", "ms": int}
+
+        Data ops (transceive, find, reqa, wupa, select, anticoll) support:
+            - expect: Expected hex data for response matching (case-insensitive)
+            - expect_bits: Number of valid bits in the last byte (1-8). Only the lower N
+              bits of the last byte are compared; upper bits are treated as 0.
+              Useful for 4-bit ACK/NAK responses (e.g. expect="0A", expect_bits=4).
+            - on_mismatch: "stop" (default) stops script on mismatch, "continue" logs mismatch but continues
 
     Returns:
         List of step results. Each result contains:
@@ -683,15 +645,15 @@ def script(steps: list[dict]) -> list[dict]:
         - step: Step index (0-based)
         - status: "ok" or "error"
         - For transceive: {data, length, last_rx_bits}
-        - For exchange: {data, length}
         - For find: {uid, atq, sak}
         - For reqa/wupa: {data, length}
         - For select: {data}
         - For anticoll: {data, bits}
         - For wait: {ms}
-        Stops on first error or expect mismatch.
+        - When expect provided: {matched: bool, expected?: str}
+        Stops on first error or expect mismatch (when on_mismatch="stop").
     """
-    if not _connected or _reader is None:
+    if not _is_connected():
         return [{"op": "script", "status": "error", "message": "NFC reader not connected"}]
 
     results = []

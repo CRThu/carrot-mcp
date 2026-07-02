@@ -207,7 +207,6 @@ Cache Layer (cache.py — JSON: %APPDATA%/carrot-mcp/pdf/<hash>.json)
 | `disconnect` | Disconnect from reader |
 | `find` | Find and activate an NFC card (returns uid, atq, sak) |
 | `transceive` | Raw frame exchange with bit-level control (InCommunicateThru) |
-| `exchange` | Data exchange with auto CRC (InDataExchange) |
 | `reqa` | ISO14443-A REQA (7-bit short frame) |
 | `wupa` | ISO14443-A WUPA (7-bit short frame) |
 | `halt` | ISO14443-A HALT |
@@ -225,22 +224,22 @@ Cache Layer (cache.py — JSON: %APPDATA%/carrot-mcp/pdf/<hash>.json)
 Application Layer (MCP tools)
     ↓ connect/find/transceive/reqa/etc
 Wrapper Layer (server.py - state management, error handling, trace capture)
-    ↓ imports nfctester registries
-Library Layer (nfctester registries)
-    ├─ CardReaderRegistry: pn532, clrc663
-    ├─ TransportRegistry: serial
-    └─ trace: loguru sink → JSON buffer
-Hardware Layer (PN532 / CLRC663 via serial)
+    ↓ imports nfcscript functions
+Library Layer (nfcscript)
+    ├─ active/reqa/wupa/halt/select/anticoll - ISO14443-3A primitives
+    ├─ transceive/transceive_bits - data exchange
+    ├─ field_on/field_off - RF field control
+    └─ connect/close/get_reader - lifecycle
+Hardware Layer (nfctester readers: PN532 / CLRC663 via serial)
 ```
 
-- Wraps `nfctester` registry system (CardReaderRegistry, TransportRegistry)
-- Single reader session managed via module-level `_reader` / `_connected` state
+- Built on `nfcscript` which wraps `nfctester` driver layer
+- Single reader session managed via `nfcscript` global state (`_NFCState`)
 - `_cleanup()` registered via `atexit` for safe shutdown
-- `find()` supports both high-level (`reader.find()`) and low-level (manual anticollision) modes
+- `find()` supports both high-level (`nfc.active()`) and low-level (manual anticollision) modes
 - `find(low_level=True)` performs multi-cascade anticollision with per-step exception handling
 - `transceive()` exposes `last_tx_bits` for non-byte-aligned commands (e.g. REQA 7 bits)
-- `exchange()` uses InDataExchange with auto CRC (simpler for card-level operations)
-- `script` hex validation is done inside each handler (consistent "Invalid hex string" errors); no pre-validation layer
+- `script` hex validation is done inside each handler (consistent "Invalid hex string" errors)
 - Trace output captured via loguru sink, returned as JSON via `trace_get()`
 
 ## Sys MCP Server Tools

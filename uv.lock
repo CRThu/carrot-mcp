@@ -211,19 +211,17 @@ requires-dist = [
 
 [[package]]
 name = "carrot-mcp-nfc"
-version = "0.1.1"
+version = "0.2.0"
 source = { editable = "packages/carrot-mcp-nfc" }
 dependencies = [
     { name = "mcp" },
     { name = "nfcscript" },
-    { name = "nfctester" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "mcp", specifier = ">=1.28.0" },
-    { name = "nfcscript", specifier = "==0.0.7" },
-    { name = "nfctester", specifier = "==0.0.39" },
+    { name = "nfcscript", specifier = "==0.0.9" },
 ]
 
 [[package]]
@@ -949,29 +947,29 @@ wheels = [
 
 [[package]]
 name = "nfcscript"
-version = "0.0.7"
+version = "0.0.9"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "nfctester" },
     { name = "python-dotenv" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/6e/fa/89b793d9ee4480ff58c6895a5999705d292417a8727a242f14cd9ce48bfa/nfcscript-0.0.7.tar.gz", hash = "sha256:261b089c8ceebda6b6d26f3d78e32285e63027b535fefcfb3eead955ffd0e50c", size = 15560, upload-time = "2026-06-27T11:42:47.812Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f0/b9/4b2099bf96c7920b4874b195e535e4aeede19ebb7f587704612c3cff00a5/nfcscript-0.0.9.tar.gz", hash = "sha256:80c2810a73c134280d4c00ce0f8b1b3680034a9c7bbf4f71df7f7eb027c50808", size = 15812, upload-time = "2026-07-01T08:31:33.404Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/af/d9/3df54f6d4a378ed747963b154614057ef7eb4a619e79aef246e5b6710600/nfcscript-0.0.7-py3-none-any.whl", hash = "sha256:6feb2e44c7201b4157c91540e6df2ba6ce3901932108b20f4054c5eb46f1c20c", size = 16214, upload-time = "2026-06-27T11:42:46.498Z" },
+    { url = "https://files.pythonhosted.org/packages/44/85/eb3a5ccb6b2c517a1c69b541ba9f1321e41a82c4e1ae4bcb7ca82eb3bcbd/nfcscript-0.0.9-py3-none-any.whl", hash = "sha256:41ed8e0437391526ca31720c3e0ed171b75a2e29671575152193574918780b0c", size = 16251, upload-time = "2026-07-01T08:31:32.141Z" },
 ]
 
 [[package]]
 name = "nfctester"
-version = "0.0.39"
+version = "0.0.41"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "loguru" },
     { name = "pycryptodome" },
     { name = "pyserial" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/6a/dd/b6fc89793aaf24be43af1e3afa7d6f2e9bda22d4ca325410a3ea9a9972f2/nfctester-0.0.39.tar.gz", hash = "sha256:28ebea4b4fa137367c89f260a47655bafd4c45ec188f2f23a230848f28648cdf", size = 41814, upload-time = "2026-06-27T11:45:26.757Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/8c/bf/4bb3b28e1b0702f76f899a5e95d027fcf816cc5bd7204feea55f277673dd/nfctester-0.0.41.tar.gz", hash = "sha256:db1c3bde05532adfeca5a596823f35dd7e8a7112d5a0b26acece4dabea6ab5ab", size = 43292, upload-time = "2026-06-30T07:55:00.619Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/1e/07/3c611cfec6da641dc75dabf9f8039c37fb0db3ed5d2587c12ee2eb89a4e3/nfctester-0.0.39-py3-none-any.whl", hash = "sha256:17bd5baa32a8d9a0fadcb141cb227cf09564e554b4575f3f9a60c98463399c18", size = 51885, upload-time = "2026-06-27T11:45:25.34Z" },
+    { url = "https://files.pythonhosted.org/packages/b1/dd/0947703e931ba628a874da2d24ad1b1798ec574334157c62f1c4686d6e63/nfctester-0.0.41-py3-none-any.whl", hash = "sha256:4e997fa0119da91f3bbda35e738fe5c39a65ba79c9571c66b3c880e0f558fc70", size = 53692, upload-time = "2026-06-30T07:54:59.454Z" },
 ]
 
 [[package]]

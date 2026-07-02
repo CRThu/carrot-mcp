@@ -12,7 +12,6 @@ Carrot MCP NFC Server — wraps [nfcscript](https://github.com/CRThu/nfcscript) 
 | `disconnect` | Disconnect from reader |
 | `find` | Find and activate an NFC card (returns uid, atq, sak) |
 | `transceive` | Raw frame exchange with bit-level control (InCommunicateThru) |
-| `exchange` | Data exchange with auto CRC (InDataExchange) |
 | `reqa` | ISO14443-A REQA (7-bit short frame) |
 | `wupa` | ISO14443-A WUPA (7-bit short frame) |
 | `halt` | ISO14443-A HALT |
@@ -49,7 +48,6 @@ uv run carrot-mcp nfc
 | Op | Params | Description |
 |----|--------|-------------|
 | `transceive` | `data` (hex), `tx_crc`?, `rx_crc`?, `last_tx_bits`? | Raw frame exchange |
-| `exchange` | `data` (hex) | Auto-CRC data exchange |
 | `find` | `low_level`? (bool) | Find and activate card |
 | `reqa` | — | REQA (7-bit short frame) |
 | `wupa` | — | WUPA (7-bit short frame) |
@@ -62,15 +60,16 @@ uv run carrot-mcp nfc
 
 ### Expect Matching
 
-`transceive` and `exchange` steps support `expect` and `on_mismatch`:
+Data ops (`transceive`, `find`, `reqa`, `wupa`, `select`, `anticoll`) support `expect`, `expect_bits`, and `on_mismatch`:
 
 ```json
 [
-  {"op": "transceive", "data": "6007", "expect": "AA55", "on_mismatch": "stop"}
+  {"op": "transceive", "data": "26", "last_tx_bits": 7, "expect": "0A", "expect_bits": 4, "on_mismatch": "stop"}
 ]
 ```
 
-- `expect` (hex): Expected response data for matching.
+- `expect` (hex): Expected response data for matching (case-insensitive).
+- `expect_bits`: Number of valid bits in the last byte (1-8). Only the lower N bits of the last byte are compared; upper bits are treated as 0. Useful for 4-bit ACK/NAK responses.
 - `on_mismatch`: `"stop"` (default) aborts the script on mismatch; `"continue"` logs the mismatch but proceeds.
 
 The script stops on the first error or `on_mismatch: "stop"`.
@@ -82,7 +81,6 @@ list_readers()
 connect(port="COM20", reader_type="pn532")
 find()
 transceive(data="6007", last_tx_bits=7, tx_crc=false, rx_crc=false)
-exchange(data="6007")
 reqa()
 wupa()
 select(cl_level=1, uid="04AABBCCDD77")
