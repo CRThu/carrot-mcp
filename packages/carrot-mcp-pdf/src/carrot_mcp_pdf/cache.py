@@ -1,8 +1,7 @@
 """PDF cache management.
 
 Storage:
-    <hash>.json       — page data, TOC, metadata
-    <hash>_tasks.json — task progress (separate, transient)
+    <hash>.json — page data, TOC, metadata
 """
 
 import copy
@@ -10,7 +9,6 @@ import hashlib
 import json
 import os
 import threading
-import time
 
 MIME_MAP = {
     ".jpg": "image/jpeg",
@@ -37,14 +35,8 @@ def get_cache_path(pdf_path: str) -> str:
     return os.path.join(_get_base_dir(), f"{_pdf_hash(pdf_path)}.json")
 
 
-def get_tasks_path(pdf_path: str) -> str:
-    """Return absolute path to the tasks JSON file for the given PDF."""
-    return os.path.join(_get_base_dir(), f"{_pdf_hash(pdf_path)}_tasks.json")
-
-
 _lock = threading.Lock()
 _mem_cache: dict[str, dict] = {}
-_mem_tasks: dict[str, dict] = {}
 
 
 def load_cache(pdf_path: str) -> dict:
@@ -88,40 +80,6 @@ def save_cache(pdf_path: str, data: dict):
         json.dump(data_copy, f, ensure_ascii=False, indent=2)
 
 
-def load_tasks(pdf_path: str) -> dict:
-    """Load background task progress data. Returns a deep copy to prevent mutation.
-
-    Lookup order: in-memory cache → disk JSON → empty dict.
-    """
-    key = get_tasks_path(pdf_path)
-    with _lock:
-        if key in _mem_tasks:
-            return copy.deepcopy(_mem_tasks[key])
-
-    data = {}
-    if os.path.exists(key):
-        try:
-            with open(key, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        except (json.JSONDecodeError, IOError):
-            pass
-
-    with _lock:
-        _mem_tasks[key] = data
-    return copy.deepcopy(data)
-
-
-def save_tasks(pdf_path: str, data: dict):
-    """Persist task data to in-memory cache and disk JSON (thread-safe)."""
-    key = get_tasks_path(pdf_path)
-    data_copy = copy.deepcopy(data)
-    with _lock:
-        _mem_tasks[key] = data_copy
-    os.makedirs(os.path.dirname(key), exist_ok=True)
-    with open(key, "w", encoding="utf-8") as f:
-        json.dump(data_copy, f, ensure_ascii=False, indent=2)
-
-
 def parse_page_range(pages_str: str) -> list[int]:
     """Parse a page range string like '1-5,8,10-12' into a sorted list of unique 1-based page numbers.
 
@@ -144,9 +102,3 @@ def parse_page_range(pages_str: str) -> list[int]:
                 raise ValueError(f"Page numbers must be >= 1, got: {val}")
             result.append(val)
     return sorted(set(result))
-
-
-def make_task_id(pdf_path: str) -> str:
-    """Generate a task ID from the first 8 chars of the PDF path hash + current timestamp."""
-    pdf_hash = hashlib.md5(pdf_path.encode()).hexdigest()[:8]
-    return f"{pdf_hash}_{int(time.time())}"

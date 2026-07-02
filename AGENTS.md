@@ -159,14 +159,12 @@ Example:
 | `version` | Get server version info |
 | `get_toc` | Get table of contents with page ranges |
 | `get_pages` | Convert specific pages to markdown (returns `list[TextContent \| ImageContent]`) |
-| `create_task` | Start background full PDF conversion (multimodal/force_ocr option) |
-| `get_status` | Check progress of background conversion task |
 
 ### Architecture
 
 ```
 Application Layer (server.py — MCP tools, thin routing)
-    ↓ get_toc/get_pages/create_task
+    ↓ get_toc/get_pages
 Conversion Layer (converter.py — pymupdf4llm → markdown + images)
     ↓ force_ocr=True
 OCR Layer (ocr.py — litellm vision API)
@@ -177,7 +175,7 @@ Cache Layer (cache.py — JSON: %APPDATA%/carrot-mcp/pdf/<hash>.json)
 - **server.py** — MCP tool definitions only, delegates to converter/cache
 - **converter.py** — PDF conversion, image processing, content parsing, VLM config
 - **ocr.py** — Vision model OCR via litellm (single responsibility)
-- **cache.py** — Cache/task persistence, path management, parse_page_range, shared MIME_MAP
+- **cache.py** — Cache persistence, path management, parse_page_range, shared MIME_MAP
 
 - Cache: `%APPDATA%/carrot-mcp/pdf/<md5(pdf_path)>.json`
 - JSON structure: `{name, size, path, total_pages, force_ocr, toc, pages: {page_num: {content: [...], ocr_content: [...]}}}`
@@ -188,10 +186,6 @@ Cache Layer (cache.py — JSON: %APPDATA%/carrot-mcp/pdf/<hash>.json)
 - `multimodal=True` returns `content` with images as `ImageContent`, `multimodal=False` returns `ocr_content` as text
 - `force_ocr` is PDF-level flag (not per-page) — if a few pages are wrong, the whole PDF is likely wrong
 - When `force_ocr=True`: renders entire page as PNG image, calls OCR API (if VLM configured), caches result; if VLM not configured, falls back to returning the rendered page as image
-- `get_status` returns `error_message` field with the last failure reason (if any)
-- Background conversion via `threading.Thread` with progress tracking in separate `<hash>_tasks.json`
-- Completed tasks auto-delete from tasks.json; failed tasks retained for debugging
-- On restart, `create_task` resumes by skipping already-cached pages
 
 **Environment variables:**
 - `CARROT_MCP_MODEL`: Vision model name (must be configured if using OCR)

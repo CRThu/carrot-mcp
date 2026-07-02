@@ -1,17 +1,13 @@
 """Tests for carrot_mcp_pdf.server module."""
 
 import base64
-import inspect
 import json
 from unittest.mock import MagicMock, patch
 
 from mcp.types import ImageContent, TextContent
 
 from carrot_mcp_pdf.server import (
-    _convert_all,
-    create_task,
     get_pages,
-    get_status,
     get_toc,
     mcp,
     version,
@@ -64,8 +60,6 @@ def test_mcp_tools_registered():
     assert "version" in tool_names
     assert "get_toc" in tool_names
     assert "get_pages" in tool_names
-    assert "create_task" in tool_names
-    assert "get_status" in tool_names
 
 
 # ── get_toc ──────────────────────────────────────────────────────────────────
@@ -377,38 +371,6 @@ def test_get_pages_no_failed_pages_when_all_succeed(tmp_path):
     assert "failed_pages" not in meta
 
 
-# ── create_task ──────────────────────────────────────────────────────────────
-
-def test_create_task_file_not_found():
-    result = create_task("nonexistent.pdf")
-    assert result["status"] == "error"
-    assert "not found" in result["message"].lower()
-
-
-def test_create_task_has_multimodal_param():
-    sig = inspect.signature(create_task)
-    assert "multimodal" in sig.parameters
-    assert sig.parameters["multimodal"].default is True
-
-
-def test_create_task_success(tmp_path):
-    pdf = tmp_path / "test.pdf"
-    pdf.write_bytes(b"fake pdf")
-
-    with patch("carrot_mcp_pdf.server.get_total_pages", return_value=10), \
-         patch("carrot_mcp_pdf.server.load_cache", return_value={"pages": {}}), \
-         patch("carrot_mcp_pdf.server.load_tasks", return_value={}), \
-         patch("carrot_mcp_pdf.server.save_tasks"), \
-         patch("carrot_mcp_pdf.server.threading.Thread") as mock_thread:
-        mock_thread.return_value.start = MagicMock()
-        result = create_task(str(pdf))
-
-    assert result["status"] == "ok"
-    assert "task_id" in result
-    assert result["total_pages"] == 10
-    assert result["message"] == "Background conversion started"
-
-
 def test_get_pages_pymupdf4llm_returns_str(tmp_path):
     """Test that get_pages handles pymupdf4llm.to_markdown() returning str."""
     pdf = tmp_path / "test.pdf"
@@ -440,118 +402,3 @@ def test_get_pages_pymupdf4llm_returns_list(tmp_path):
     meta, blocks = _parse_result(result)
     assert meta["status"] == "ok"
     assert blocks[1].text == "Page content"
-
-
-# ── get_status ───────────────────────────────────────────────────────────────
-
-def test_get_status_not_found():
-    result = get_status("nonexistent_task_id")
-    assert result["status"] == "error"
-    assert "not found" in result["message"].lower()
-
-
-def test_get_status_returns_all_fields(tmp_path):
-    pdf = tmp_path / "test.pdf"
-    pdf.write_bytes(b"fake pdf")
-
-    tasks = {"test_task_123": {
-        "status": "running",
-        "progress_percent": 42,
-        "current_page": 5,
-        "total_pages": 10,
-        "cached_pages": 4,
-        "failed_at_page": 5,
-        "start_time": "2025-01-01T00:00:00",
-    }}
-
-    with patch("carrot_mcp_pdf.server._find_task_in_files", return_value=tasks["test_task_123"]):
-        result = get_status("test_task_123")
-
-    assert result["status"] == "ok"
-    assert result["conversion_status"] == "running"
-    assert result["progress_percent"] == 42
-    assert result["current_page"] == 5
-    assert result["total_pages"] == 10
-    assert result["cached_pages"] == 4
-    assert result["failed_at_page"] == 5
-
-
-def test_get_status_returns_error_message():
-    task = {
-        "status": "failed",
-        "progress_percent": 17,
-        "current_page": 3,
-        "total_pages": 29,
-        "cached_pages": 5,
-        "failed_at_page": 6,
-        "start_time": "2025-01-01T00:00:00",
-        "error_message": "OCR failed: API timeout",
-    }
-
-    with patch("carrot_mcp_pdf.server._find_task_in_files", return_value=task):
-        result = get_status("test_task_123")
-
-    assert result["status"] == "ok"
-    assert result["conversion_status"] == "failed"
-    assert result["error_message"] == "OCR failed: API timeout"
-
-
-def test_get_status_error_message_none_when_missing():
-    task = {
-        "status": "running",
-        "progress_percent": 42,
-        "current_page": 5,
-        "total_pages": 10,
-        "cached_pages": 4,
-        "failed_at_page": None,
-        "start_time": "2025-01-01T00:00:00",
-    }
-
-    with patch("carrot_mcp_pdf.server._find_task_in_files", return_value=task):
-        result = get_status("test_task_123")
-
-    assert result["status"] == "ok"
-    assert result["error_message"] is None
-
-
-# ── _convert_all task lifecycle ──────────────────────────────────────────────
-
-def test_convert_all_completed_deletes_task(tmp_path):
-    pdf = tmp_path / "test.pdf"
-    pdf.write_bytes(b"fake pdf")
-    task_id = "abc123_1234"
-    tasks = {task_id: {"status": "running", "progress_percent": 0, "current_page": 0}}
-
-    with patch("carrot_mcp_pdf.server.load_cache", return_value={
-        "pages": {}, "force_ocr": True, "total_pages": 2,
-    }), \
-         patch("carrot_mcp_pdf.server.save_cache"), \
-         patch("carrot_mcp_pdf.server.load_tasks", return_value=tasks), \
-         patch("carrot_mcp_pdf.server.save_tasks") as mock_save, \
-         patch("carrot_mcp_pdf.server.get_total_pages", return_value=2), \
-         patch("carrot_mcp_pdf.server.ocr_page", return_value="ocr text"):
-        _convert_all(pdf, task_id, multimodal=True, force_ocr=True)
-
-    saved = mock_save.call_args[0][1]
-    assert task_id not in saved, "completed task should be deleted from tasks"
-
-
-def test_convert_all_sets_error_message_on_failure(tmp_path):
-    pdf = tmp_path / "test.pdf"
-    pdf.write_bytes(b"fake pdf")
-    task_id = "abc123_1234"
-    tasks = {task_id: {"status": "running", "progress_percent": 0, "current_page": 0}}
-
-    with patch("carrot_mcp_pdf.server.load_cache", return_value={
-        "pages": {}, "force_ocr": True, "total_pages": 2,
-    }), \
-         patch("carrot_mcp_pdf.server.save_cache"), \
-         patch("carrot_mcp_pdf.server.load_tasks", return_value=tasks), \
-         patch("carrot_mcp_pdf.server.save_tasks") as mock_save, \
-         patch("carrot_mcp_pdf.server.get_total_pages", return_value=2), \
-         patch("carrot_mcp_pdf.server.ocr_page", side_effect=RuntimeError("API error")):
-        _convert_all(pdf, task_id, multimodal=True, force_ocr=True)
-
-    saved = mock_save.call_args[0][1]
-    assert saved[task_id]["status"] == "failed"
-    assert "API error" in saved[task_id]["error_message"]
