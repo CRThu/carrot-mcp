@@ -19,7 +19,7 @@ from carrot_mcp_office.word import (
     insert_image,
     delete_image,
     get_outline,
-    get_content_by_outline,
+    get_content,
     _parse_sections,
 )
 
@@ -461,10 +461,10 @@ def test_get_outline_no_headings():
             os.unlink(path)
 
 
-def test_get_content_by_outline():
+def test_get_content():
     path = _create_heading_docx()
     try:
-        result = get_content_by_outline(path, [0])
+        result = get_content(path, section=[0])
         meta, images = _parse_content_result(result)
         assert meta["status"] == "ok"
         assert meta["count"] == 1
@@ -482,10 +482,10 @@ def test_get_content_by_outline():
             os.unlink(path)
 
 
-def test_get_content_by_outline_multiple():
+def test_get_content_multiple():
     path = _create_heading_docx()
     try:
-        result = get_content_by_outline(path, [1, 3])
+        result = get_content(path, section=[1, 3])
         meta, _ = _parse_content_result(result)
         assert meta["status"] == "ok"
         assert meta["count"] == 2
@@ -497,10 +497,10 @@ def test_get_content_by_outline_multiple():
             os.unlink(path)
 
 
-def test_get_content_by_outline_out_of_range():
+def test_get_content_out_of_range():
     path = _create_heading_docx()
     try:
-        result = get_content_by_outline(path, [99])
+        result = get_content(path, section=[99])
         meta, _ = _parse_content_result(result)
         assert meta["status"] == "ok"
         assert meta["sections"] == []
@@ -512,11 +512,11 @@ def test_get_content_by_outline_out_of_range():
             os.unlink(path)
 
 
-def test_get_content_by_outline_with_table():
+def test_get_content_with_table():
     path = _create_heading_docx()
     try:
         insert_table(path, 2, 2, [["A", "B"], ["C", "D"]])
-        result = get_content_by_outline(path, [0])
+        result = get_content(path, [0])
         meta, _ = _parse_content_result(result)
         assert meta["status"] == "ok"
         assert meta["count"] == 1
@@ -526,7 +526,7 @@ def test_get_content_by_outline_with_table():
             os.unlink(path)
 
 
-def test_get_content_by_outline_empty_section():
+def test_get_content_empty_section():
     """Test getting content for a section that has no content paragraphs between headings."""
     from docx import Document
     d = tempfile.mkdtemp(prefix="test_office_")
@@ -537,7 +537,7 @@ def test_get_content_by_outline_empty_section():
     doc.add_heading("H3", level=1)
     doc.save(path)
     try:
-        result = get_content_by_outline(path, [1])
+        result = get_content(path, [1])
         meta, _ = _parse_content_result(result)
         assert meta["status"] == "ok"
         sec = meta["sections"][0]
@@ -582,7 +582,7 @@ def test_get_outline_deep_nesting():
             os.unlink(path)
 
 
-def test_get_content_by_outline_last_section():
+def test_get_content_last_section():
     """Test getting content for the last section (no next heading)."""
     from docx import Document
     d = tempfile.mkdtemp(prefix="test_office_")
@@ -595,7 +595,7 @@ def test_get_content_by_outline_last_section():
     doc.add_paragraph("Last content B")
     doc.save(path)
     try:
-        result = get_content_by_outline(path, [1])
+        result = get_content(path, [1])
         meta, _ = _parse_content_result(result)
         assert meta["status"] == "ok"
         sec = meta["sections"][0]
@@ -632,13 +632,13 @@ def test_get_outline_empty_heading_text():
             os.unlink(path)
 
 
-def test_get_content_by_outline_with_images():
+def test_get_content_with_images():
     """Test content retrieval returns images as ImageContent attachments."""
     img_path = _create_test_image()
     path = _create_heading_docx()
     try:
         insert_image(path, img_path, index=2)
-        result = get_content_by_outline(path, [0])
+        result = get_content(path, [0])
         meta, images = _parse_content_result(result)
         assert meta["status"] == "ok"
         sec = meta["sections"][0]
@@ -654,11 +654,11 @@ def test_get_content_by_outline_with_images():
             os.unlink(img_path)
 
 
-def test_get_content_by_outline_range_string():
+def test_get_content_range_string():
     """Test range string like '0-2' expands correctly."""
     path = _create_heading_docx()
     try:
-        result = get_content_by_outline(path, ["0-2"])
+        result = get_content(path, ["0-2"])
         meta, _ = _parse_content_result(result)
         assert meta["status"] == "ok"
         assert meta["count"] == 3
@@ -670,11 +670,11 @@ def test_get_content_by_outline_range_string():
             os.unlink(path)
 
 
-def test_get_content_by_outline_mixed_spec():
+def test_get_content_mixed_spec():
     """Test mixed spec like ['0-1', 3] expands correctly."""
     path = _create_heading_docx()
     try:
-        result = get_content_by_outline(path, ["0-1", 3])
+        result = get_content(path, ["0-1", 3])
         meta, _ = _parse_content_result(result)
         assert meta["status"] == "ok"
         assert meta["count"] == 3
@@ -686,11 +686,11 @@ def test_get_content_by_outline_mixed_spec():
             os.unlink(path)
 
 
-def test_get_content_by_outline_string_index():
+def test_get_content_string_index():
     """Test string index like '3' works the same as int 3."""
     path = _create_heading_docx()
     try:
-        result = get_content_by_outline(path, ["3"])
+        result = get_content(path, ["3"])
         meta, _ = _parse_content_result(result)
         assert meta["status"] == "ok"
         assert meta["count"] == 1
@@ -701,11 +701,11 @@ def test_get_content_by_outline_string_index():
             os.unlink(path)
 
 
-def test_get_content_by_outline_text_only():
+def test_get_content_text_only():
     """Test text_only returns lean format: strings, 2D arrays, images kept."""
     path = _create_heading_docx()
     try:
-        result = get_content_by_outline(path, [0], text_only=True)
+        result = get_content(path, [0], text_only=True)
         meta, images = _parse_content_result(result)
         assert meta["status"] == "ok"
         assert meta["count"] == 1
@@ -724,11 +724,11 @@ def test_get_content_by_outline_text_only():
             os.unlink(path)
 
 
-def test_get_content_by_outline_text_only_multiple():
+def test_get_content_text_only_multiple():
     """Test text_only with multiple sections."""
     path = _create_heading_docx()
     try:
-        result = get_content_by_outline(path, [0, 3], text_only=True)
+        result = get_content(path, [0, 3], text_only=True)
         meta, images = _parse_content_result(result)
         assert meta["status"] == "ok"
         assert meta["count"] == 2
@@ -742,13 +742,13 @@ def test_get_content_by_outline_text_only_multiple():
             os.unlink(path)
 
 
-def test_get_content_by_outline_text_only_keeps_images():
+def test_get_content_text_only_keeps_images():
     """Test text_only still returns ImageContent for images."""
     img_path = _create_test_image()
     path = _create_heading_docx()
     try:
         insert_image(path, img_path, index=2)
-        result = get_content_by_outline(path, [0], text_only=True)
+        result = get_content(path, [0], text_only=True)
         meta, images = _parse_content_result(result)
         assert meta["status"] == "ok"
         assert len(images) >= 1
@@ -761,12 +761,12 @@ def test_get_content_by_outline_text_only_keeps_images():
             os.unlink(img_path)
 
 
-def test_get_content_by_outline_text_only_tables():
+def test_get_content_text_only_tables():
     """Test text_only returns tables as 2D arrays without data wrapper."""
     path = _create_heading_docx()
     try:
-        result_full = get_content_by_outline(path, [0])
-        resultLean = get_content_by_outline(path, [0], text_only=True)
+        result_full = get_content(path, [0])
+        resultLean = get_content(path, [0], text_only=True)
         meta_full, _ = _parse_content_result(result_full)
         meta_lean, _ = _parse_content_result(resultLean)
         sec_full = meta_full["sections"][0]

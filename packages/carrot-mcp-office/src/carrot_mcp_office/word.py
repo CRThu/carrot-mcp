@@ -542,8 +542,8 @@ def get_outline(path: str) -> dict:
 
 
 @mcp.tool()
-def get_content_by_outline(path: str, sections: list, text_only: bool = False) -> list:
-    """Get content for specific outline sections.
+def get_content(path: str, section: list | None = None, paragraph: list | None = None, text_only: bool = False) -> list:
+    """Get content for specific outline sections or paragraphs.
 
     Use get_outline first to obtain section list, then pass section
     indices here to fetch paragraphs, tables, and images for each section.
@@ -551,13 +551,17 @@ def get_content_by_outline(path: str, sections: list, text_only: bool = False) -
 
     Args:
         path: Absolute path to the .doc/.docx file.
-        sections: Indices into the `flat` array returned by get_outline
+        section: Indices into the `flat` array returned by get_outline
             (NOT the `index` field inside each node — that is the
             paragraph position in the document). Accepts a list where
             each element is:
             - int: direct index, e.g. [0, 2, 5]
             - str: range or comma-separated list, e.g. ["0-9"] or
               ["0-4,6,8"] or ["0-4", 6, 8]
+        paragraph: Direct paragraph indices (0-based position in the
+            document). Use this when you know the exact paragraph
+            position from search/inspect results. Accepts same format
+            as section.
         text_only: If true, return a leaner format: paragraphs as plain
             strings (no index), tables as 2D arrays directly (no wrapper),
             and omit paragraph_range/image_count. Images are still returned
@@ -571,15 +575,50 @@ def get_content_by_outline(path: str, sections: list, text_only: bool = False) -
         path, err = _handle_docx(path)
         if err:
             return [TextContent(type="text", text=json.dumps(err))]
+        if section is not None and paragraph is not None:
+            return [TextContent(type="text", text=json.dumps({"status": "error", "message": "Use either 'section' or 'paragraph', not both"}))]
+        if section is None and paragraph is None:
+            return [TextContent(type="text", text=json.dumps({"status": "error", "message": "Must provide either 'section' or 'paragraph'"}))]
+
         doc = Document(path)
+        result: list = []
+
+        if paragraph is not None:
+            para_indices = _parse_sections(paragraph, len(doc.paragraphs) - 1)
+            paragraphs = []
+            img_idx = 0
+            out_of_range = []
+            for p_idx in para_indices:
+                if p_idx < 0 or p_idx >= len(doc.paragraphs):
+                    out_of_range.append(p_idx)
+                    continue
+                para = doc.paragraphs[p_idx]
+                if para.text.strip():
+                    if text_only:
+                        paragraphs.append(para.text)
+                    else:
+                        paragraphs.append({"index": p_idx, "text": para.text})
+                for img_bytes, mime in _extract_images_from_para(para):
+                    result.append(ImageContent(
+                        type="image",
+                        data=base64.b64encode(img_bytes).decode(),
+                        mimeType=mime,
+                        context=f"Paragraph {p_idx}, image {img_idx}",
+                    ))
+                    img_idx += 1
+            meta: dict = {"status": "ok", "path": path, "mode": "paragraph", "paragraphs": paragraphs, "count": len(paragraphs)}
+            if out_of_range:
+                meta["warning"] = f"Paragraphs out of range (0-{len(doc.paragraphs)-1}): {out_of_range}"
+            result.insert(0, TextContent(type="text", text=json.dumps(meta, ensure_ascii=False)))
+            return result
+
         flat = []
         for i, para in enumerate(doc.paragraphs):
             level = _heading_level(para.style.name)
             if level is not None:
                 flat.append({"level": level, "title": para.text, "index": i})
 
-        sec_indices = _parse_sections(sections, len(flat) - 1)
-        result: list = []
+        sec_indices = _parse_sections(section, len(flat) - 1)
         sections_meta = []
         out_of_range = []
 
@@ -638,7 +677,7 @@ def get_content_by_outline(path: str, sections: list, text_only: bool = False) -
                 sec_entry["image_count"] = img_idx
             sections_meta.append(sec_entry)
 
-        meta: dict = {"status": "ok", "path": path, "sections": sections_meta, "count": len(sections_meta)}
+        meta = {"status": "ok", "path": path, "mode": "section", "sections": sections_meta, "count": len(sections_meta)}
         if out_of_range:
             meta["warning"] = f"Sections out of range (0-{len(flat)-1}): {out_of_range}"
         result.insert(0, TextContent(type="text", text=json.dumps(meta, ensure_ascii=False)))
