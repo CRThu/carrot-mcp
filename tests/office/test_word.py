@@ -503,7 +503,9 @@ def test_get_content_by_outline_out_of_range():
         result = get_content_by_outline(path, [99])
         meta, _ = _parse_content_result(result)
         assert meta["status"] == "ok"
-        assert meta["sections"][0]["error"] is not None
+        assert meta["sections"] == []
+        assert "warning" in meta
+        assert "99" in meta["warning"]
     finally:
         _cleanup(path)
         if os.path.exists(path):
@@ -693,6 +695,88 @@ def test_get_content_by_outline_string_index():
         assert meta["status"] == "ok"
         assert meta["count"] == 1
         assert meta["sections"][0]["title"] == "Chapter 2"
+    finally:
+        _cleanup(path)
+        if os.path.exists(path):
+            os.unlink(path)
+
+
+def test_get_content_by_outline_text_only():
+    """Test text_only returns lean format: strings, 2D arrays, images kept."""
+    path = _create_heading_docx()
+    try:
+        result = get_content_by_outline(path, [0], text_only=True)
+        meta, images = _parse_content_result(result)
+        assert meta["status"] == "ok"
+        assert meta["count"] == 1
+        sec = meta["sections"][0]
+        assert sec["title"] == "Chapter 1"
+        assert sec["level"] == 1
+        assert isinstance(sec["paragraphs"], list)
+        assert all(isinstance(p, str) for p in sec["paragraphs"])
+        assert "Intro text" in sec["paragraphs"]
+        assert isinstance(sec["tables"], list)
+        assert "paragraph_range" not in sec
+        assert "image_count" not in sec
+    finally:
+        _cleanup(path)
+        if os.path.exists(path):
+            os.unlink(path)
+
+
+def test_get_content_by_outline_text_only_multiple():
+    """Test text_only with multiple sections."""
+    path = _create_heading_docx()
+    try:
+        result = get_content_by_outline(path, [0, 3], text_only=True)
+        meta, images = _parse_content_result(result)
+        assert meta["status"] == "ok"
+        assert meta["count"] == 2
+        assert meta["sections"][0]["title"] == "Chapter 1"
+        assert meta["sections"][1]["title"] == "Chapter 2"
+        assert isinstance(meta["sections"][0]["paragraphs"], list)
+        assert isinstance(meta["sections"][1]["paragraphs"], list)
+    finally:
+        _cleanup(path)
+        if os.path.exists(path):
+            os.unlink(path)
+
+
+def test_get_content_by_outline_text_only_keeps_images():
+    """Test text_only still returns ImageContent for images."""
+    img_path = _create_test_image()
+    path = _create_heading_docx()
+    try:
+        insert_image(path, img_path, index=2)
+        result = get_content_by_outline(path, [0], text_only=True)
+        meta, images = _parse_content_result(result)
+        assert meta["status"] == "ok"
+        assert len(images) >= 1
+        assert images[0].type == "image"
+    finally:
+        _cleanup(path)
+        if os.path.exists(path):
+            os.unlink(path)
+        if os.path.exists(img_path):
+            os.unlink(img_path)
+
+
+def test_get_content_by_outline_text_only_tables():
+    """Test text_only returns tables as 2D arrays without data wrapper."""
+    path = _create_heading_docx()
+    try:
+        result_full = get_content_by_outline(path, [0])
+        resultLean = get_content_by_outline(path, [0], text_only=True)
+        meta_full, _ = _parse_content_result(result_full)
+        meta_lean, _ = _parse_content_result(resultLean)
+        sec_full = meta_full["sections"][0]
+        sec_lean = meta_lean["sections"][0]
+        assert isinstance(sec_lean["tables"], list)
+        assert "paragraph_range" not in sec_lean
+        assert "image_count" not in sec_lean
+        for i, p in enumerate(sec_lean["paragraphs"]):
+            assert isinstance(p, str)
+            assert p == sec_full["paragraphs"][i]["text"]
     finally:
         _cleanup(path)
         if os.path.exists(path):

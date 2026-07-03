@@ -542,7 +542,7 @@ def get_outline(path: str) -> dict:
 
 
 @mcp.tool()
-def get_content_by_outline(path: str, sections: list) -> list:
+def get_content_by_outline(path: str, sections: list, text_only: bool = False) -> list:
     """Get content for specific outline sections.
 
     Use get_outline first to obtain section list, then pass section
@@ -558,6 +558,10 @@ def get_content_by_outline(path: str, sections: list) -> list:
             - int: direct index, e.g. [0, 2, 5]
             - str: range or comma-separated list, e.g. ["0-9"] or
               ["0-4,6,8"] or ["0-4", 6, 8]
+        text_only: If true, return a leaner format: paragraphs as plain
+            strings (no index), tables as 2D arrays directly (no wrapper),
+            and omit paragraph_range/image_count. Images are still returned
+            as ImageContent attachments.
 
     Returns:
         list[TextContent | ImageContent] — first element is JSON metadata,
@@ -577,10 +581,11 @@ def get_content_by_outline(path: str, sections: list) -> list:
         sec_indices = _parse_sections(sections, len(flat) - 1)
         result: list = []
         sections_meta = []
+        out_of_range = []
 
         for sec_idx in sec_indices:
             if sec_idx < 0 or sec_idx >= len(flat):
-                sections_meta.append({"section": sec_idx, "error": f"Index out of range (0-{len(flat)-1})"})
+                out_of_range.append(sec_idx)
                 continue
 
             start = flat[sec_idx]["index"]
@@ -597,7 +602,10 @@ def get_content_by_outline(path: str, sections: list) -> list:
             for j in range(start, end):
                 para = doc.paragraphs[j]
                 if para.text.strip():
-                    paragraphs.append({"index": j, "text": para.text})
+                    if text_only:
+                        paragraphs.append(para.text)
+                    else:
+                        paragraphs.append({"index": j, "text": para.text})
                 for img_bytes, mime in _extract_images_from_para(para):
                     result.append(ImageContent(
                         type="image",
@@ -615,21 +623,24 @@ def get_content_by_outline(path: str, sections: list) -> list:
                         t_index = k
                         break
                 if t_index is not None and start <= t_index < end:
-                    tables.append({
-                        "data": [[cell.text for cell in row.cells] for row in t.rows],
-                    })
+                    rows = [[cell.text for cell in row.cells] for row in t.rows]
+                    tables.append(rows if text_only else {"data": rows})
 
-            sections_meta.append({
+            sec_entry: dict = {
                 "section": sec_idx,
                 "title": flat[sec_idx]["title"],
                 "level": flat[sec_idx]["level"],
-                "paragraph_range": [start, end - 1],
                 "paragraphs": paragraphs,
                 "tables": tables,
-                "image_count": img_idx,
-            })
+            }
+            if not text_only:
+                sec_entry["paragraph_range"] = [start, end - 1]
+                sec_entry["image_count"] = img_idx
+            sections_meta.append(sec_entry)
 
-        meta = {"status": "ok", "path": path, "sections": sections_meta, "count": len(sections_meta)}
+        meta: dict = {"status": "ok", "path": path, "sections": sections_meta, "count": len(sections_meta)}
+        if out_of_range:
+            meta["warning"] = f"Sections out of range (0-{len(flat)-1}): {out_of_range}"
         result.insert(0, TextContent(type="text", text=json.dumps(meta, ensure_ascii=False)))
         return result
     except Exception as e:

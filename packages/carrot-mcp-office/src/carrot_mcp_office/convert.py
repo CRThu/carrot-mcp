@@ -67,6 +67,7 @@ def ensure_docx_format(path: str) -> tuple[str, str | None]:
 
     Returns (path, error_message). If conversion succeeds, path is the .docx path.
     If no conversion needed, path is returned as-is with None error.
+    If a .docx with the same stem already exists, it is reused without re-converting.
     """
     ext = Path(path).suffix.lower()
     if ext != ".doc":
@@ -74,6 +75,10 @@ def ensure_docx_format(path: str) -> tuple[str, str | None]:
 
     if not os.path.exists(path):
         return path, None
+
+    docx_path = os.path.splitext(os.path.abspath(path))[0] + ".docx"
+    if os.path.exists(docx_path):
+        return docx_path, None
 
     if not _has_win32com():
         return path, "Legacy .doc conversion requires pywin32 (Windows only). Install with: pip install pywin32"
@@ -90,6 +95,7 @@ def ensure_xlsx_format(path: str) -> tuple[str, str | None]:
 
     Returns (path, error_message). If conversion succeeds, path is the .xlsx path.
     If no conversion needed, path is returned as-is with None error.
+    If an .xlsx with the same stem already exists, it is reused without re-converting.
     """
     ext = Path(path).suffix.lower()
     if ext != ".xls":
@@ -97,6 +103,10 @@ def ensure_xlsx_format(path: str) -> tuple[str, str | None]:
 
     if not os.path.exists(path):
         return path, None
+
+    xlsx_path = os.path.splitext(os.path.abspath(path))[0] + ".xlsx"
+    if os.path.exists(xlsx_path):
+        return xlsx_path, None
 
     if not _has_win32com():
         return path, "Legacy .xls conversion requires pywin32 (Windows only). Install with: pip install pywin32"

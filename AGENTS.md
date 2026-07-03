@@ -207,7 +207,7 @@ Cache Layer (cache.py — JSON: %APPDATA%/carrot-mcp/pdf/<hash>.json)
 |------|-------------|
 | `inspect` | Inspect document structure (paragraphs, tables, images, styles). Only returns non-empty paragraphs. Accepts `.doc` (auto-converted). |
 | `get_outline` | Get document outline as tree + flat list. Use flat array indices (0-based position) with `get_content_by_outline`. Accepts `.doc`. |
-| `get_content_by_outline` | Get paragraphs, tables, and images for sections identified by flat outline indices (NOT the `index` field in nodes). Accepts `.doc`. |
+| `get_content_by_outline` | Get paragraphs, tables, and images for sections identified by flat outline indices (NOT the `index` field in nodes). Set `text_only=true` for leaner output. Accepts `.doc`. |
 | `get_table` | Read table content as 2D array. Accepts `.doc`. |
 | `insert_para` | Insert a paragraph |
 | `modify_para` | Modify paragraph text |
@@ -244,12 +244,12 @@ Application Layer (MCP tools)
     ↓ inspect/get_outline/get_content_by_outline/insert_*/modify_*/format_*/delete_*
 Word Layer (word.py — python-docx, heading hierarchy, content extraction)
 Excel Layer (excel.py — openpyxl, cell/range/chart operations)
-Conversion Layer (convert.py — .doc/.xls → .docx/.xlsx via win32com)
+Conversion Layer (convert.py — .doc/.xls → .docx/.xlsx via win32com, reuses existing .docx/.xlsx)
 Backup Layer (backup.py — auto-versioning on every write)
 ```
 
 - `get_outline` extracts Heading 1–9 styles into a hierarchical tree with `children` and a flat list with `parent` tracking
-- `get_content_by_outline` takes flat array position indices (0, 1, 2, ...) from `get_outline`'s `flat` return — NOT the `index` field in each node (that's the paragraph position in the document). Accepts ints, range strings (`"0-9"`), comma-separated (`"0-4,6,8"`), or mixed (`["0-4",6,8]`). Returns paragraphs (non-empty text + index), tables (2D cell values), and images as ImageContent attachments.
+- `get_content_by_outline` takes flat array position indices (0, 1, 2, ...) from `get_outline`'s `flat` return — NOT the `index` field in each node (that's the paragraph position in the document). Accepts ints, range strings (`"0-9"`), comma-separated (`"0-4,6,8"`), or mixed (`["0-4",6,8]`). Set `text_only=true` for leaner output: paragraphs as plain strings, tables as 2D arrays directly, omit paragraph_range/image_count. Returns paragraphs (non-empty text + index), tables (2D cell values), and images as ImageContent attachments.
 - Table position detection walks `doc.element.body` children to find the XML index, matching against paragraph range
 - `_heading_level()` parses "Heading N" style names; non-standard heading styles are ignored
 

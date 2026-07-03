@@ -54,7 +54,7 @@ All Excel tools accept `.xls`/`.xlsx` files (`.xls` auto-converted on Windows).
 | `insert_image` | Insert an image |
 | `delete_image` | Delete an inline image |
 | `get_outline` | Get document outline as tree + flat list. Use flat array indices (0-based position) with `get_content_by_outline`. |
-| `get_content_by_outline` | Get paragraphs, tables, and images for sections identified by flat outline indices. Supports int list, range strings like `"0-4"`, and mixed. |
+| `get_content_by_outline` | Get paragraphs, tables, and images for sections identified by flat outline indices. Supports int list, range strings like `"0-4"`, and mixed. Set `text_only=true` for leaner output (plain text strings, 2D table arrays, no redundant metadata). |
 
 All Word tools accept `.doc`/`.docx` files (`.doc` auto-converted on Windows).
 
@@ -98,8 +98,9 @@ Backups are stored in `%APPDATA%/carrot-mcp/office/` with mirrored directory str
 
 When you pass a `.doc` or `.xls` file path, the server automatically:
 1. Detects the legacy format
-2. Converts to `.docx`/`.xlsx` via win32com (preserves original file)
-3. Operates on the new format
+2. If a `.docx`/`.xlsx` with the same name already exists in the same directory, reuses it directly (skips conversion)
+3. Otherwise converts via win32com (preserves original file)
+4. Operates on the `.docx`/`.xlsx` format
 
 Requires `pywin32` on Windows. Returns error on other platforms.
 
