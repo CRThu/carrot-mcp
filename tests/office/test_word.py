@@ -833,3 +833,116 @@ def test_get_table_out_of_range():
         assert "out of range" in result["message"]
     finally:
         _cleanup(path)
+
+
+# ── search tests ──
+
+
+def test_search_basic():
+    from carrot_mcp_office.word import search
+    path = _docx()
+    try:
+        from docx import Document
+        doc = Document()
+        doc.add_paragraph("Hello World")
+        doc.add_paragraph("Goodbye World")
+        doc.add_paragraph("Hello Again")
+        doc.save(path)
+
+        result = search(path, "Hello")
+        assert result["status"] == "ok"
+        assert result["count"] == 2
+        assert result["matches"][0]["index"] == 0
+        assert result["matches"][0]["text"] == "Hello World"
+        assert result["matches"][1]["index"] == 2
+    finally:
+        _cleanup(path)
+
+
+def test_search_case_insensitive():
+    from carrot_mcp_office.word import search
+    path = _docx()
+    try:
+        from docx import Document
+        doc = Document()
+        doc.add_paragraph("Hello World")
+        doc.save(path)
+
+        result = search(path, "hello")
+        assert result["status"] == "ok"
+        assert result["count"] == 1
+    finally:
+        _cleanup(path)
+
+
+def test_search_regex():
+    from carrot_mcp_office.word import search
+    path = _docx()
+    try:
+        from docx import Document
+        doc = Document()
+        doc.add_paragraph("abc 123")
+        doc.add_paragraph("xyz 456")
+        doc.add_paragraph("abc 789")
+        doc.save(path)
+
+        result = search(path, r"abc \d+", regex=True)
+        assert result["status"] == "ok"
+        assert result["count"] == 2
+    finally:
+        _cleanup(path)
+
+
+def test_search_regex_invalid():
+    from carrot_mcp_office.word import search
+    path = _docx()
+    try:
+        from docx import Document
+        doc = Document()
+        doc.add_paragraph("test")
+        doc.save(path)
+
+        result = search(path, r"[invalid", regex=True)
+        assert result["status"] == "error"
+        assert "Invalid regex" in result["message"]
+    finally:
+        _cleanup(path)
+
+
+def test_search_context():
+    from carrot_mcp_office.word import search
+    path = _docx()
+    try:
+        from docx import Document
+        doc = Document()
+        doc.add_paragraph("line 0")
+        doc.add_paragraph("line 1")
+        doc.add_paragraph("TARGET")
+        doc.add_paragraph("line 3")
+        doc.add_paragraph("line 4")
+        doc.save(path)
+
+        result = search(path, "TARGET")
+        assert result["status"] == "ok"
+        m = result["matches"][0]
+        assert m["context_before"] == ["line 1"]
+        assert m["context_after"] == ["line 3"]
+    finally:
+        _cleanup(path)
+
+
+def test_search_no_match():
+    from carrot_mcp_office.word import search
+    path = _docx()
+    try:
+        from docx import Document
+        doc = Document()
+        doc.add_paragraph("hello")
+        doc.save(path)
+
+        result = search(path, "xyz")
+        assert result["status"] == "ok"
+        assert result["count"] == 0
+        assert result["matches"] == []
+    finally:
+        _cleanup(path)

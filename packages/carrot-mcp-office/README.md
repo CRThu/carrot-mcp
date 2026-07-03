@@ -55,6 +55,7 @@ All Excel tools accept `.xls`/`.xlsx` files (`.xls` auto-converted on Windows).
 | `delete_image` | Delete an inline image |
 | `get_outline` | Get document outline as tree + flat list. Use flat array indices (0-based position) with `get_content_by_outline`. |
 | `get_content_by_outline` | Get paragraphs, tables, and images for sections identified by flat outline indices. Supports int list, range strings like `"0-4"`, and mixed. Set `text_only=true` for leaner output (plain text strings, 2D table arrays, no redundant metadata). |
+| `search` | Full-text search in paragraphs. Supports exact match (case-insensitive default) or regex. Returns matches with index, style, and surrounding context. |
 
 All Word tools accept `.doc`/`.docx` files (`.doc` auto-converted on Windows).
 

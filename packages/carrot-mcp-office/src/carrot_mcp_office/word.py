@@ -645,3 +645,54 @@ def get_content_by_outline(path: str, sections: list, text_only: bool = False) -
         return result
     except Exception as e:
         return [TextContent(type="text", text=json.dumps({"status": "error", "message": str(e)}))]
+
+
+@mcp.tool()
+def search(path: str, query: str, regex: bool = False) -> dict:
+    """Search for text in paragraphs (full-text search).
+
+    Args:
+        path: Absolute path to the .doc/.docx file.
+        query: Text to search for. Exact match by default, or regex if regex=True.
+        regex: If true, treat query as a Python regular expression.
+    """
+    try:
+        path, err = _handle_docx(path)
+        if err:
+            return err
+        doc = Document(path)
+        import re
+        if regex:
+            pattern = re.compile(query, re.IGNORECASE)
+            def _match(text: str) -> bool:
+                return bool(pattern.search(text))
+        else:
+            def _match(text: str) -> bool:
+                return query.lower() in text.lower()
+
+        matches = []
+        for i, para in enumerate(doc.paragraphs):
+            if para.text.strip() and _match(para.text):
+                ctx_before = [doc.paragraphs[j].text for j in range(max(0, i - 1), i) if doc.paragraphs[j].text.strip()]
+                ctx_after = [doc.paragraphs[j].text for j in range(i + 1, min(len(doc.paragraphs), i + 2)) if doc.paragraphs[j].text.strip()]
+                matches.append({
+                    "index": i,
+                    "text": para.text,
+                    "style": para.style.name,
+                    "context_before": ctx_before,
+                    "context_after": ctx_after,
+                })
+
+        return {
+            "status": "ok",
+            "path": path,
+            "query": query,
+            "regex": regex,
+            "total_paragraphs": len(doc.paragraphs),
+            "matches": matches,
+            "count": len(matches),
+        }
+    except re.error as e:
+        return {"status": "error", "message": f"Invalid regex: {e}"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}

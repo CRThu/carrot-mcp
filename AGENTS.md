@@ -219,6 +219,7 @@ Cache Layer (cache.py — JSON: %APPDATA%/carrot-mcp/pdf/<hash>.json)
 | `delete_table` | Delete a table |
 | `insert_image` | Insert an image |
 | `delete_image` | Delete an inline image |
+| `search` | Full-text search in paragraphs. Supports exact match (case-insensitive default) or regex. Returns matches with index, style, and surrounding context. Accepts `.doc`. |
 
 All Word tools accept `.doc`/`.docx` files (`.doc` auto-converted on Windows).
 
