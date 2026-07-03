@@ -243,7 +243,7 @@ requires-dist = [
 
 [[package]]
 name = "carrot-mcp-pdf"
-version = "0.2.0"
+version = "0.2.1"
 source = { editable = "packages/carrot-mcp-pdf" }
 dependencies = [
     { name = "litellm" },
