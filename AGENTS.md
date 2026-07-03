@@ -159,6 +159,7 @@ Example:
 | `version` | Get server version info |
 | `get_toc` | Get table of contents with page ranges |
 | `get_pages` | Convert specific pages to markdown (returns `list[TextContent \| ImageContent]`) |
+| `search` | Full-text search in PDF pages. Case-insensitive exact match by default, or regex. Returns matches with page number, text, and surrounding context. |
 
 ### Architecture
 

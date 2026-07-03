@@ -402,3 +402,99 @@ def test_get_pages_pymupdf4llm_returns_list(tmp_path):
     meta, blocks = _parse_result(result)
     assert meta["status"] == "ok"
     assert blocks[1].text == "Page content"
+
+
+# ── search ────────────────────────────────────────────────────────────────────
+
+
+def test_search_basic(tmp_path):
+    """Test basic search functionality."""
+    import pymupdf
+    pdf = tmp_path / "search.pdf"
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_text((72, 72), "Hello World")
+    page.insert_text((72, 100), "Goodbye World")
+    doc.save(str(pdf))
+    doc.close()
+
+    from carrot_mcp_pdf.server import search
+    result = search(str(pdf), "Hello")
+    assert result["status"] == "ok"
+    assert result["count"] == 1
+    assert result["matches"][0]["page"] == 1
+    assert "Hello" in result["matches"][0]["text"]
+
+
+def test_search_case_insensitive(tmp_path):
+    """Test case-insensitive search."""
+    import pymupdf
+    pdf = tmp_path / "search_ci.pdf"
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_text((72, 72), "Hello World")
+    doc.save(str(pdf))
+    doc.close()
+
+    from carrot_mcp_pdf.server import search
+    result = search(str(pdf), "hello")
+    assert result["status"] == "ok"
+    assert result["count"] == 1
+
+
+def test_search_no_match(tmp_path):
+    """Test search with no matches."""
+    import pymupdf
+    pdf = tmp_path / "search_nomatch.pdf"
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_text((72, 72), "Hello World")
+    doc.save(str(pdf))
+    doc.close()
+
+    from carrot_mcp_pdf.server import search
+    result = search(str(pdf), "xyz")
+    assert result["status"] == "ok"
+    assert result["count"] == 0
+    assert result["matches"] == []
+
+
+def test_search_regex(tmp_path):
+    """Test regex search."""
+    import pymupdf
+    pdf = tmp_path / "search_regex.pdf"
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_text((72, 72), "abc 123")
+    page.insert_text((72, 100), "xyz 456")
+    doc.save(str(pdf))
+    doc.close()
+
+    from carrot_mcp_pdf.server import search
+    result = search(str(pdf), r"abc \d+", regex=True)
+    assert result["status"] == "ok"
+    assert result["count"] == 1
+
+
+def test_search_regex_invalid(tmp_path):
+    """Test invalid regex returns error."""
+    import pymupdf
+    pdf = tmp_path / "search_regex_invalid.pdf"
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_text((72, 72), "test")
+    doc.save(str(pdf))
+    doc.close()
+
+    from carrot_mcp_pdf.server import search
+    result = search(str(pdf), r"[invalid", regex=True)
+    assert result["status"] == "error"
+    assert "Invalid regex" in result["message"]
+
+
+def test_search_file_not_found():
+    """Test search with non-existent file."""
+    from carrot_mcp_pdf.server import search
+    result = search("/nonexistent/file.pdf", "test")
+    assert result["status"] == "error"
+    assert "File not found" in result["message"]

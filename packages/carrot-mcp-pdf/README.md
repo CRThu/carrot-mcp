@@ -28,6 +28,7 @@ uv run python -m carrot_mcp_pdf
 | `version` | Get server version info |
 | `get_toc` | Get table of contents with page ranges |
 | `get_pages` | Convert specific pages to markdown (supports multimodal/OCR/force_ocr) |
+| `search` | Full-text search in PDF pages. Case-insensitive exact match by default, or regex. Returns matches with page number, text, and surrounding context. |
 
 ## Architecture
 

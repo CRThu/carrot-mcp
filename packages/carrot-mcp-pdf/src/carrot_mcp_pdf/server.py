@@ -230,6 +230,74 @@ def get_pages(pdf_path: str, pages: str, multimodal: bool = True, force_ocr: boo
     return result
 
 
+@mcp.tool()
+def search(pdf_path: str, query: str, regex: bool = False) -> dict:
+    """Search for text in PDF pages (full-text search).
+
+    Uses pymupdf native text extraction — works on text-based PDFs only,
+    not scanned/image-based PDFs.
+
+    Args:
+        pdf_path: Path to the PDF file.
+        query: Text to search for. Case-insensitive exact match by default,
+               or regex if regex=True.
+
+    Returns:
+        {status, query, total_pages, matches: [{page, index, text,
+         context_before, context_after}], count}
+    """
+    if not os.path.exists(pdf_path):
+        return {"status": "error", "message": f"File not found: {pdf_path}"}
+
+    try:
+        import re as re_mod
+        doc = pymupdf.open(pdf_path)
+        total_pages = doc.page_count
+
+        if regex:
+            pattern = re_mod.compile(query, re_mod.IGNORECASE)
+            def _match(text: str) -> bool:
+                return bool(pattern.search(text))
+        else:
+            def _match(text: str) -> bool:
+                return query.lower() in text.lower()
+
+        matches = []
+        for page_num in range(total_pages):
+            page = doc[page_num]
+            text = page.get_text("text")
+            if not text.strip():
+                continue
+
+            lines = text.split("\n")
+            for line_idx, line in enumerate(lines):
+                if line.strip() and _match(line):
+                    ctx_before = [lines[j].strip() for j in range(max(0, line_idx - 1), line_idx) if lines[j].strip()]
+                    ctx_after = [lines[j].strip() for j in range(line_idx + 1, min(len(lines), line_idx + 2)) if lines[j].strip()]
+                    matches.append({
+                        "page": page_num + 1,
+                        "index": line_idx,
+                        "text": line.strip(),
+                        "context_before": ctx_before,
+                        "context_after": ctx_after,
+                    })
+
+        doc.close()
+        return {
+            "status": "ok",
+            "pdf_path": pdf_path,
+            "query": query,
+            "regex": regex,
+            "total_pages": total_pages,
+            "matches": matches,
+            "count": len(matches),
+        }
+    except re_mod.error as e:
+        return {"status": "error", "message": f"Invalid regex: {e}"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 def main():
     print("carrot-mcp-pdf server ready", file=sys.stderr)
     mcp.run()
