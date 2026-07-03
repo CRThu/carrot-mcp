@@ -34,6 +34,10 @@ def list_carrot() -> dict:
     return {k: v for k, v in _load().get("mcpServers", {}).items() if k.startswith("carrot-")}
 
 
+def list_carrot_local() -> dict:
+    return {k: v for k, v in list_carrot().items() if v.get("type") != "http"}
+
+
 def get_env(config: dict) -> dict:
     return config.get("env")
 

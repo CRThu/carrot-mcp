@@ -42,6 +42,10 @@ def list_carrot() -> dict:
     return {k: v for k, v in _load().get("mcp", {}).items() if k.startswith("carrot-")}
 
 
+def list_carrot_local() -> dict:
+    return {k: v for k, v in list_carrot().items() if v.get("type") != "remote"}
+
+
 def get_env(config: dict) -> dict:
     return config.get("environment")
 

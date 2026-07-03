@@ -55,13 +55,18 @@ def cmd_add(args, servers, agents):
             print(f"  {agent_name}: skipped (not installed)")
             continue
         existing = agent.list_carrot()
-        for name in list(existing.keys()):
+        local = agent.list_carrot_local()
+        for name in list(local.keys()):
             agent.remove(name)
         count = 0
         for name in sorted(servers.keys()):
-            agent.add(name, env=agent.get_env(existing.get(name, {})), use_uvx=use_uvx)
+            agent.add(name, env=agent.get_env(existing.get(f"carrot-{name}", {})), use_uvx=use_uvx)
             count += 1
-        print(f"  {agent_name}: updated {count} server(s) ({mode})")
+        remote_count = len(existing) - len(local)
+        if remote_count:
+            print(f"  {agent_name}: updated {count} server(s) ({mode}), skipped {remote_count} remote")
+        else:
+            print(f"  {agent_name}: updated {count} server(s) ({mode})")
 
 
 def cmd_remove(args, servers, agents):

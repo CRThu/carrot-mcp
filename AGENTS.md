@@ -384,13 +384,20 @@ carrot-mcp mcp remove [agent ...]  # Remove all carrot servers from agents (defa
 - Managed by shared `src/carrot_mcp/backup.py` module
 
 **Adding a new agent:**
-1. Create `src/carrot_mcp/<agent>.py` with functions: `is_available`, `add(name, env, use_uvx)`, `remove`, `list_carrot`, `get_env`
+1. Create `src/carrot_mcp/<agent>.py` with functions: `is_available`, `add(name, env, use_uvx)`, `remove`, `list_carrot`, `list_carrot_local`, `get_env`
 2. Add entry point in `pyproject.toml`:
    ```toml
    [project.entry-points."carrot_mcp.agents"]
    <agent> = "carrot_mcp.<agent>"
    ```
 3. Write tests in `tests/test_agents.py`
+
+**Remote server preservation:**
+- `mcp add` only overwrites local (carrot-mcp managed) servers, remote servers are preserved
+- Remote detection:
+  - Claude: `type == "http"` (HTTP MCP servers)
+  - MiMoCode/OpenCode: `type == "remote"`
+- `list_carrot_local()` returns only managed entries; env from all existing entries (including remote) is inherited by new servers
 
 ## License
 

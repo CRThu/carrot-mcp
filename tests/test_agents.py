@@ -62,6 +62,20 @@ class TestClaudeConfig:
         assert "carrot-pdf" in result
         assert "other-server" not in result
 
+    @patch("carrot_mcp.claude._load")
+    def test_list_carrot_local_skips_http(self, mock_load):
+        mock_load.return_value = {
+            "mcpServers": {
+                "carrot-pdf": {"command": "uvx"},
+                "carrot-remote": {"type": "http", "url": "https://example.com"},
+            }
+        }
+
+        from carrot_mcp.claude import list_carrot_local
+        result = list_carrot_local()
+        assert "carrot-pdf" in result
+        assert "carrot-remote" not in result
+
     def test_get_env(self):
         from carrot_mcp.claude import get_env
         assert get_env({"env": {"KEY": "val"}}) == {"KEY": "val"}
@@ -124,6 +138,20 @@ class TestMiMoCodeConfig:
         result = list_carrot()
         assert "carrot-pdf" in result
         assert "other-server" not in result
+
+    @patch("carrot_mcp.mimocode._load")
+    def test_list_carrot_local_skips_remote(self, mock_load):
+        mock_load.return_value = {
+            "mcp": {
+                "carrot-pdf": {"type": "local", "command": ["uvx"]},
+                "carrot-remote": {"type": "remote", "url": "https://example.com"},
+            }
+        }
+
+        from carrot_mcp.mimocode import list_carrot_local
+        result = list_carrot_local()
+        assert "carrot-pdf" in result
+        assert "carrot-remote" not in result
 
     def test_get_env(self):
         from carrot_mcp.mimocode import get_env
@@ -197,6 +225,20 @@ class TestOpenCodeConfig:
         result = list_carrot()
         assert "carrot-pdf" in result
         assert "other-server" not in result
+
+    @patch("carrot_mcp.opencode._load")
+    def test_list_carrot_local_skips_remote(self, mock_load):
+        mock_load.return_value = {
+            "mcp": {
+                "carrot-pdf": {"type": "local", "command": ["uvx"]},
+                "carrot-remote": {"type": "remote", "url": "https://example.com"},
+            }
+        }
+
+        from carrot_mcp.opencode import list_carrot_local
+        result = list_carrot_local()
+        assert "carrot-pdf" in result
+        assert "carrot-remote" not in result
 
     def test_get_env(self):
         from carrot_mcp.opencode import get_env
