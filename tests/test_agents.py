@@ -7,13 +7,11 @@ from pathlib import Path
 
 
 class TestClaudeConfig:
-    @patch("carrot_mcp.claude.shutil")
+    @patch("carrot_mcp.claude.backup_config", return_value="/tmp/test/backup.json")
     @patch("carrot_mcp.claude.CONFIG")
-    @patch("carrot_mcp.claude.BACKUP_DIR")
-    def test_add_new_server(self, mock_backup_dir, mock_config, mock_shutil):
+    def test_add_new_server(self, mock_config, mock_backup):
         mock_config.exists.return_value = True
         mock_config.read_text.return_value = json.dumps({"mcpServers": {}})
-        mock_backup_dir.__truediv__ = lambda self, x: Path("/tmp/test")
 
         from carrot_mcp.claude import add
         add("pdf")
@@ -21,12 +19,12 @@ class TestClaudeConfig:
         mock_config.write_text.assert_called_once()
         written = json.loads(mock_config.write_text.call_args[0][0])
         assert "carrot-pdf" in written["mcpServers"]
-        assert written["mcpServers"]["carrot-pdf"]["command"] == "uvx"
-        assert written["mcpServers"]["carrot-pdf"]["args"] == ["carrot-mcp-pdf@latest"]
+        assert written["mcpServers"]["carrot-pdf"]["command"] == "carrot-mcp"
+        assert written["mcpServers"]["carrot-pdf"]["args"] == ["run", "pdf"]
 
-    @patch("carrot_mcp.claude.shutil")
+    @patch("carrot_mcp.claude.backup_config", return_value="/tmp/test/backup.json")
     @patch("carrot_mcp.claude.CONFIG")
-    def test_add_preserves_env(self, mock_config, mock_shutil):
+    def test_add_preserves_env(self, mock_config, mock_backup):
         mock_config.exists.return_value = True
         existing = {"mcpServers": {"carrot-pdf": {"env": {"API_KEY": "abc123"}}}}
         mock_config.read_text.return_value = json.dumps(existing)
@@ -37,9 +35,9 @@ class TestClaudeConfig:
         written = json.loads(mock_config.write_text.call_args[0][0])
         assert written["mcpServers"]["carrot-pdf"]["env"]["API_KEY"] == "abc123"
 
-    @patch("carrot_mcp.claude.shutil")
+    @patch("carrot_mcp.claude.backup_config", return_value="/tmp/test/backup.json")
     @patch("carrot_mcp.claude.CONFIG")
-    def test_remove_server(self, mock_config, mock_shutil):
+    def test_remove_server(self, mock_config, mock_backup):
         mock_config.exists.return_value = True
         existing = {"mcpServers": {"carrot-pdf": {"command": "uvx"}}}
         mock_config.read_text.return_value = json.dumps(existing)
@@ -71,9 +69,9 @@ class TestClaudeConfig:
 
 
 class TestMiMoCodeConfig:
-    @patch("carrot_mcp.mimocode.shutil")
+    @patch("carrot_mcp.mimocode.backup_config", return_value="/tmp/test/backup.json")
     @patch("carrot_mcp.mimocode.CONFIG")
-    def test_add_new_server(self, mock_config, mock_shutil):
+    def test_add_new_server(self, mock_config, mock_backup):
         mock_config.exists.return_value = True
         mock_config.parent.exists.return_value = True
         mock_config.read_text.return_value = json.dumps({"mcp": {}})
@@ -84,11 +82,11 @@ class TestMiMoCodeConfig:
         mock_config.write_text.assert_called_once()
         written = json.loads(mock_config.write_text.call_args[0][0])
         assert "carrot-pdf" in written["mcp"]
-        assert written["mcp"]["carrot-pdf"]["command"] == ["uvx", "carrot-mcp-pdf@latest"]
+        assert written["mcp"]["carrot-pdf"]["command"] == ["carrot-mcp", "run", "pdf"]
 
-    @patch("carrot_mcp.mimocode.shutil")
+    @patch("carrot_mcp.mimocode.backup_config", return_value="/tmp/test/backup.json")
     @patch("carrot_mcp.mimocode.CONFIG")
-    def test_add_preserves_env(self, mock_config, mock_shutil):
+    def test_add_preserves_env(self, mock_config, mock_backup):
         mock_config.exists.return_value = True
         mock_config.parent.exists.return_value = True
         existing = {"mcp": {"carrot-pdf": {"environment": {"API_KEY": "abc123"}}}}
@@ -100,9 +98,9 @@ class TestMiMoCodeConfig:
         written = json.loads(mock_config.write_text.call_args[0][0])
         assert written["mcp"]["carrot-pdf"]["environment"]["API_KEY"] == "abc123"
 
-    @patch("carrot_mcp.mimocode.shutil")
+    @patch("carrot_mcp.mimocode.backup_config", return_value="/tmp/test/backup.json")
     @patch("carrot_mcp.mimocode.CONFIG")
-    def test_remove_server(self, mock_config, mock_shutil):
+    def test_remove_server(self, mock_config, mock_backup):
         mock_config.exists.return_value = True
         existing = {"mcp": {"carrot-pdf": {"command": ["uvx"]}}}
         mock_config.read_text.return_value = json.dumps(existing)
@@ -144,9 +142,9 @@ class TestMiMoCodeConfig:
 
 
 class TestOpenCodeConfig:
-    @patch("carrot_mcp.opencode.shutil")
+    @patch("carrot_mcp.opencode.backup_config", return_value="/tmp/test/backup.json")
     @patch("carrot_mcp.opencode.CONFIG")
-    def test_add_new_server(self, mock_config, mock_shutil):
+    def test_add_new_server(self, mock_config, mock_backup):
         mock_config.exists.return_value = True
         mock_config.parent.exists.return_value = True
         mock_config.read_text.return_value = json.dumps({"mcp": {}})
@@ -157,11 +155,11 @@ class TestOpenCodeConfig:
         mock_config.write_text.assert_called_once()
         written = json.loads(mock_config.write_text.call_args[0][0])
         assert "carrot-pdf" in written["mcp"]
-        assert written["mcp"]["carrot-pdf"]["command"] == ["uvx", "carrot-mcp-pdf@latest"]
+        assert written["mcp"]["carrot-pdf"]["command"] == ["carrot-mcp", "run", "pdf"]
 
-    @patch("carrot_mcp.opencode.shutil")
+    @patch("carrot_mcp.opencode.backup_config", return_value="/tmp/test/backup.json")
     @patch("carrot_mcp.opencode.CONFIG")
-    def test_add_preserves_env(self, mock_config, mock_shutil):
+    def test_add_preserves_env(self, mock_config, mock_backup):
         mock_config.exists.return_value = True
         mock_config.parent.exists.return_value = True
         existing = {"mcp": {"carrot-pdf": {"environment": {"API_KEY": "abc123"}}}}
@@ -173,9 +171,9 @@ class TestOpenCodeConfig:
         written = json.loads(mock_config.write_text.call_args[0][0])
         assert written["mcp"]["carrot-pdf"]["environment"]["API_KEY"] == "abc123"
 
-    @patch("carrot_mcp.opencode.shutil")
+    @patch("carrot_mcp.opencode.backup_config", return_value="/tmp/test/backup.json")
     @patch("carrot_mcp.opencode.CONFIG")
-    def test_remove_server(self, mock_config, mock_shutil):
+    def test_remove_server(self, mock_config, mock_backup):
         mock_config.exists.return_value = True
         existing = {"mcp": {"carrot-pdf": {"command": ["uvx"]}}}
         mock_config.read_text.return_value = json.dumps(existing)

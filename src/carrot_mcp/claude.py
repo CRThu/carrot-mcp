@@ -1,16 +1,15 @@
 """Claude Code MCP config.
 
 Config path: ~/.claude.json
-Backup path: ~/.claude/
+Backup path: %APPDATA%/carrot-mcp/agents/claude/
 """
 
 import json
-import shutil
 from pathlib import Path
-from datetime import datetime
+
+from carrot_mcp.backup import backup_config
 
 CONFIG = Path.home() / ".claude.json"
-BACKUP_DIR = Path.home() / ".claude"
 
 
 def is_available() -> bool:
@@ -28,13 +27,7 @@ def _dump(data: dict) -> str:
 
 
 def backup() -> str:
-    if not CONFIG.exists():
-        return ""
-    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    b = BACKUP_DIR / f".claude.json.backup.{ts}"
-    shutil.copy2(CONFIG, b)
-    return str(b)
+    return backup_config("claude", CONFIG)
 
 
 def list_carrot() -> dict:
@@ -45,15 +38,22 @@ def get_env(config: dict) -> dict:
     return config.get("env")
 
 
-def add(name: str, env: dict = None) -> str:
+def add(name: str, env: dict = None, use_uvx: bool = False) -> str:
     b = backup()
     c = _load()
     key = f"carrot-{name}"
-    c.setdefault("mcpServers", {})[key] = {
-        "command": "uvx",
-        "args": [f"carrot-mcp-{name}@latest"],
-        "env": env or {},
-    }
+    if use_uvx:
+        c.setdefault("mcpServers", {})[key] = {
+            "command": "uvx",
+            "args": [f"carrot-mcp-{name}@latest"],
+            "env": env or {},
+        }
+    else:
+        c.setdefault("mcpServers", {})[key] = {
+            "command": "carrot-mcp",
+            "args": ["run", name],
+            "env": env or {},
+        }
     CONFIG.write_text(_dump(c), "utf-8")
     return b
 

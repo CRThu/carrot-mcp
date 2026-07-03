@@ -351,17 +351,24 @@ CLI manages MCP server configs for different agents via entry points.
 
 | Agent | Config Path | Backup Path | Env Key |
 |-------|-------------|-------------|---------|
-| claude | `~/.claude.json` | `~/.claude/` | `env` |
-| mimocode | `~/.config/mimocode/mimocode.jsonc` | `~/.config/mimocode/` | `environment` |
-| opencode | `~/.config/opencode/opencode.jsonc` | `~/.config/opencode/` | `environment` |
+| claude | `~/.claude.json` | `%APPDATA%/carrot-mcp/agents/claude/` | `env` |
+| mimocode | `~/.config/mimocode/mimocode.jsonc` | `%APPDATA%/carrot-mcp/agents/mimocode/` | `environment` |
+| opencode | `~/.config/opencode/opencode.jsonc` | `%APPDATA%/carrot-mcp/agents/opencode/` | `environment` |
 
 **CLI commands:**
 ```bash
 carrot-mcp run <server>    # Run MCP server
 carrot-mcp list             # List available servers
-carrot-mcp add              # Add all carrot servers to all agents
-carrot-mcp remove           # Remove all carrot servers from all agents
+carrot-mcp mcp add [agent ...]     # Add all carrot servers to agents (default: all)
+carrot-mcp mcp add --uvx [agent ...]   # Force uvx mode (auto-update)
+carrot-mcp mcp add --local [agent ...]  # Force local mode
+carrot-mcp mcp remove [agent ...]  # Remove all carrot servers from agents (default: all)
 ```
+
+**Auto-detection:** If no `--uvx`/`--local` flag, detects:
+- `carrot-mcp` in PATH → local mode
+- `uvx` in PATH → uvx mode
+- Neither → error
 
 **Agent detection:**
 - claude: checks if `~/.claude.json` exists
@@ -371,8 +378,13 @@ carrot-mcp remove           # Remove all carrot servers from all agents
 - When adding servers, existing `env`/`environment` configs are preserved
 - Servers not in the new list are removed
 
+**Backup:**
+- All agent config backups stored in `%APPDATA%/carrot-mcp/agents/<agent_name>/` (Windows) or `~/.local/share/carrot-mcp/agents/<agent_name>/` (Linux/macOS)
+- Format: `config_YYYYMMDD_HHMMSS.json(c)`
+- Managed by shared `src/carrot_mcp/backup.py` module
+
 **Adding a new agent:**
-1. Create `src/carrot_mcp/<agent>.py` with functions: `is_available`, `add`, `remove`, `list_carrot`, `get_env`
+1. Create `src/carrot_mcp/<agent>.py` with functions: `is_available`, `add(name, env, use_uvx)`, `remove`, `list_carrot`, `get_env`
 2. Add entry point in `pyproject.toml`:
    ```toml
    [project.entry-points."carrot_mcp.agents"]

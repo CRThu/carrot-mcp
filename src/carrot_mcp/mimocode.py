@@ -1,13 +1,13 @@
 """MiMoCode MCP config.
 
 Config path: ~/.config/mimocode/mimocode.jsonc
-Backup path: ~/.config/mimocode/
+Backup path: %APPDATA%/carrot-mcp/agents/mimocode/
 """
 
 import json
-import shutil
 from pathlib import Path
-from datetime import datetime
+
+from carrot_mcp.backup import backup_config
 
 CONFIG = Path.home() / ".config" / "mimocode" / "mimocode.jsonc"
 
@@ -35,12 +35,7 @@ def _dump(data: dict) -> str:
 
 
 def backup() -> str:
-    if not CONFIG.exists():
-        return ""
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    b = CONFIG.parent / f"mimocode.jsonc.backup.{ts}"
-    shutil.copy2(CONFIG, b)
-    return str(b)
+    return backup_config("mimocode", CONFIG)
 
 
 def list_carrot() -> dict:
@@ -51,17 +46,25 @@ def get_env(config: dict) -> dict:
     return config.get("environment")
 
 
-def add(name: str, env: dict = None) -> str:
+def add(name: str, env: dict = None, use_uvx: bool = False) -> str:
     _ensure()
     b = backup()
     c = _load()
     key = f"carrot-{name}"
-    c.setdefault("mcp", {})[key] = {
-        "type": "local",
-        "command": ["uvx", f"carrot-mcp-{name}@latest"],
-        "enabled": True,
-        "environment": env or {},
-    }
+    if use_uvx:
+        c.setdefault("mcp", {})[key] = {
+            "type": "local",
+            "command": ["uvx", f"carrot-mcp-{name}@latest"],
+            "enabled": True,
+            "environment": env or {},
+        }
+    else:
+        c.setdefault("mcp", {})[key] = {
+            "type": "local",
+            "command": ["carrot-mcp", "run", name],
+            "enabled": True,
+            "environment": env or {},
+        }
     CONFIG.write_text(_dump(c), "utf-8")
     return b
 

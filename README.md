@@ -6,47 +6,86 @@ A collection of MCP (Model Context Protocol) servers for various hardware and da
 
 ## Installation
 
+### uvx (no install, always latest)
+
+Run directly without installing. Always fetches latest version.
+
+```bash
+# Run any server directly
+uvx carrot-mcp-pdf@latest
+uvx carrot-mcp-io@latest
+uvx carrot-mcp-nfc@latest
+uvx carrot-mcp-office@latest
+uvx carrot-mcp-sys@latest
+
+# Run via meta package
+uvx carrot-mcp run pdf
+```
+
+### uv tool (recommended)
+
+Persistent install with automatic PATH setup. Upgrades cleanly.
+
+```bash
+# Install all
+uv tool install carrot-mcp
+
+# Install specific servers
+uv tool install carrot-mcp[pdf]
+uv tool install carrot-mcp[io]
+uv tool install carrot-mcp[nfc]
+uv tool install carrot-mcp[office]
+uv tool install carrot-mcp[sys]
+
+# Or install sub-packages directly
+uv tool install carrot-mcp-pdf
+uv tool install carrot-mcp-io
+uv tool install carrot-mcp-nfc
+uv tool install carrot-mcp-office
+uv tool install carrot-mcp-sys
+
+# Upgrade
+uv tool upgrade carrot-mcp
+
+# Uninstall
+uv tool uninstall carrot-mcp
+```
+
 ### pip
 
+Classic Python install. Requires manual PATH setup.
+
 ```bash
+# Install all
 pip install carrot-mcp
-```
 
-This installs all MCP servers (pdf, io, nfc, office, sys) by default.
-
-### uv
-
-```bash
-uv pip install carrot-mcp
-```
-
-### Install specific servers only
-
-```bash
-# pip or uv
+# Install specific servers
 pip install carrot-mcp[pdf]
 pip install carrot-mcp[io]
 pip install carrot-mcp[nfc]
 pip install carrot-mcp[office]
 pip install carrot-mcp[sys]
-```
 
-### Or install sub-packages directly
-
-```bash
+# Or install sub-packages directly
 pip install carrot-mcp-pdf
 pip install carrot-mcp-io
 pip install carrot-mcp-nfc
 pip install carrot-mcp-office
 pip install carrot-mcp-sys
+
+# Upgrade
+pip install --upgrade carrot-mcp
+
+# Uninstall
+pip uninstall carrot-mcp
 ```
 
 ## Quick Start
 
-### uvx (recommended)
+### uvx (no install, always latest)
 
 ```bash
-# Run a specific server directly (no install needed)
+# Run a specific server directly
 uvx carrot-mcp-pdf@latest
 uvx carrot-mcp-io@latest
 uvx carrot-mcp-nfc@latest
@@ -57,13 +96,19 @@ uvx carrot-mcp-sys@latest
 uvx carrot-mcp list
 
 # Add all carrot servers to supported agents
-uvx carrot-mcp add
+uvx carrot-mcp mcp add
+
+# Force uvx mode for agent configs
+uvx carrot-mcp mcp add --uvx
+
+# Force local mode
+uvx carrot-mcp mcp add --local
 
 # Remove all carrot servers from agents
-uvx carrot-mcp remove
+uvx carrot-mcp mcp remove
 ```
 
-### CLI
+### CLI (after uv tool or pip install)
 
 ```bash
 # List all available servers
@@ -77,10 +122,23 @@ carrot-mcp run office
 carrot-mcp run sys
 
 # Add all carrot servers to supported agents
-carrot-mcp add
+carrot-mcp mcp add
+
+# Add to specific agent(s)
+carrot-mcp mcp add claude
+carrot-mcp mcp add claude mimocode
+
+# Force uvx mode (auto-update)
+carrot-mcp mcp add --uvx
+
+# Force local mode
+carrot-mcp mcp add --local
 
 # Remove all carrot servers from agents
-carrot-mcp remove
+carrot-mcp mcp remove
+
+# Remove from specific agent(s)
+carrot-mcp mcp remove claude
 
 # Run with uv
 uv run carrot-mcp run office
@@ -242,10 +300,10 @@ Features:
 ### Auto-config (recommended)
 
 ```bash
-carrot-mcp add
+carrot-mcp mcp add
 ```
 
-This adds all servers to supported agents (claude, opencode, mimocode).
+This adds all servers to supported agents (claude, opencode, mimocode). Auto-detects whether to use `carrot-mcp run` or `uvx` based on what's installed. Use `--uvx` or `--local` to override.
 
 ### Manual config
 
@@ -255,24 +313,24 @@ This adds all servers to supported agents (claude, opencode, mimocode).
 {
   "mcpServers": {
     "carrot-pdf": {
-      "command": "uvx",
-      "args": ["carrot-mcp-pdf@latest"]
+      "command": "carrot-mcp",
+      "args": ["run", "pdf"]
     },
     "carrot-office": {
-      "command": "uvx",
-      "args": ["carrot-mcp-office@latest"]
+      "command": "carrot-mcp",
+      "args": ["run", "office"]
     },
     "carrot-io": {
-      "command": "uvx",
-      "args": ["carrot-mcp-io@latest"]
+      "command": "carrot-mcp",
+      "args": ["run", "io"]
     },
     "carrot-nfc": {
-      "command": "uvx",
-      "args": ["carrot-mcp-nfc@latest"]
+      "command": "carrot-mcp",
+      "args": ["run", "nfc"]
     },
     "carrot-sys": {
-      "command": "uvx",
-      "args": ["carrot-mcp-sys@latest"]
+      "command": "carrot-mcp",
+      "args": ["run", "sys"]
     }
   }
 }
@@ -286,31 +344,31 @@ This adds all servers to supported agents (claude, opencode, mimocode).
   "mcp": {
     "carrot-pdf": {
       "type": "local",
-      "command": ["uvx", "carrot-mcp-pdf@latest"],
+      "command": ["carrot-mcp", "run", "pdf"],
       "enabled": true,
       "environment": {}
     },
     "carrot-office": {
       "type": "local",
-      "command": ["uvx", "carrot-mcp-office@latest"],
+      "command": ["carrot-mcp", "run", "office"],
       "enabled": true,
       "environment": {}
     },
     "carrot-io": {
       "type": "local",
-      "command": ["uvx", "carrot-mcp-io@latest"],
+      "command": ["carrot-mcp", "run", "io"],
       "enabled": true,
       "environment": {}
     },
     "carrot-nfc": {
       "type": "local",
-      "command": ["uvx", "carrot-mcp-nfc@latest"],
+      "command": ["carrot-mcp", "run", "nfc"],
       "enabled": true,
       "environment": {}
     },
     "carrot-sys": {
       "type": "local",
-      "command": ["uvx", "carrot-mcp-sys@latest"],
+      "command": ["carrot-mcp", "run", "sys"],
       "enabled": true,
       "environment": {}
     }
