@@ -6,7 +6,7 @@ import tempfile
 
 from carrot_mcp_office.excel import (
     workbook_metadata,
-    workbook_search,
+    workbook_grep,
     create_sheet,
     rename_sheet,
     delete_sheet,
@@ -375,12 +375,12 @@ def test_format_range_merge():
             os.unlink(path)
 
 
-def test_workbook_search():
+def test_workbook_grep():
     path = _xlsx()
     try:
         create_sheet(path, "Data")
         write_range(path, "Data", "A1", [["Apple"], ["Banana"], ["Cherry"]])
-        result = workbook_search(path, "Data", "ana")
+        result = workbook_grep(path, "Data", "ana")
         assert result["status"] == "ok"
         assert result["count"] == 1
         assert result["results"][0]["cell"] == "A2"
@@ -390,14 +390,43 @@ def test_workbook_search():
             os.unlink(path)
 
 
-def test_workbook_search_no_results():
+def test_workbook_grep_no_results():
     path = _xlsx()
     try:
         create_sheet(path, "Data")
         write_range(path, "Data", "A1", [["Apple"]])
-        result = workbook_search(path, "Data", "xyz")
+        result = workbook_grep(path, "Data", "xyz")
         assert result["status"] == "ok"
         assert result["count"] == 0
+    finally:
+        _cleanup(path)
+        if os.path.exists(path):
+            os.unlink(path)
+
+
+def test_workbook_grep_regex():
+    path = _xlsx()
+    try:
+        create_sheet(path, "Data")
+        write_range(path, "Data", "A1", [["abc 123"], ["xyz 456"], ["abc 789"]])
+        result = workbook_grep(path, "Data", r"abc \d+", regex=True)
+        assert result["status"] == "ok"
+        assert result["count"] == 2
+        assert result["regex"] is True
+    finally:
+        _cleanup(path)
+        if os.path.exists(path):
+            os.unlink(path)
+
+
+def test_workbook_grep_regex_invalid():
+    path = _xlsx()
+    try:
+        create_sheet(path, "Data")
+        write_range(path, "Data", "A1", [["test"]])
+        result = workbook_grep(path, "Data", r"[invalid", regex=True)
+        assert result["status"] == "error"
+        assert "Invalid regex" in result["message"]
     finally:
         _cleanup(path)
         if os.path.exists(path):

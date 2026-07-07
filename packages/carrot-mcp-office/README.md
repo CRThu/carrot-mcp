@@ -19,7 +19,7 @@ Carrot MCP Office Server — Excel and Word automation via MCP.
 | Tool | Description |
 |------|-------------|
 | `workbook_metadata` | Get workbook metadata (sheet names, properties) |
-| `workbook_search` | Search for values in a sheet |
+| `workbook_grep` | Search for exact substring in cell values. Case-insensitive by default, or regex. |
 | `create_sheet` | Create a new sheet |
 | `rename_sheet` | Rename a sheet |
 | `delete_sheet` | Delete a sheet |
@@ -55,7 +55,7 @@ All Excel tools accept `.xls`/`.xlsx` files (`.xls` auto-converted on Windows).
 | `delete_image` | Delete an inline image |
 | `get_outline` | Get document outline as tree + flat list. Use flat array indices (0-based position) with `get_content`. |
 | `get_content` | Get paragraphs, tables, and images by `section` (flat outline indices) or `paragraph` (document paragraph indices). Set `text_only=true` for leaner output. |
-| `search` | Full-text search in paragraphs. Supports exact match (case-insensitive default) or regex. Returns matches with index, style, and surrounding context. |
+| `grep` | Search for exact substring in paragraphs. Case-insensitive by default, or regex. Returns matches with index, style, and surrounding context. |
 
 All Word tools accept `.doc`/`.docx` files (`.doc` auto-converted on Windows).
 

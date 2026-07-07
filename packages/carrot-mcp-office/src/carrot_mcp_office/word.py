@@ -494,11 +494,11 @@ def _parse_sections(raw: list, max_index: int) -> list[int]:
 def get_outline(path: str) -> dict:
     """Get document outline (heading hierarchy).
 
-    Returns both a hierarchical tree and a flat list of headings (Heading 1–9).
+    Returns both a hierarchical tree and a flat list of headings (Heading 1-9).
     Each node contains: level, title, index (paragraph position), parent.
 
     To fetch section content, pass the flat array's 0-based position indices
-    to get_content_by_outline. For example, if flat returns:
+    to get_content. For example, if flat returns:
       [{"level":1,"title":"Intro","index":0}, {"level":2,"title":"A","index":3}]
     Then sections=[0, 1] fetches "Intro" and "A".
 
@@ -560,7 +560,7 @@ def get_content(path: str, section: list | None = None, paragraph: list | None =
               ["0-4,6,8"] or ["0-4", 6, 8]
         paragraph: Direct paragraph indices (0-based position in the
             document). Use this when you know the exact paragraph
-            position from search/inspect results. Accepts same format
+            position from grep/inspect results. Accepts same format
             as section.
         text_only: If true, return a leaner format: paragraphs as plain
             strings (no index), tables as 2D arrays directly (no wrapper),
@@ -687,13 +687,18 @@ def get_content(path: str, section: list | None = None, paragraph: list | None =
 
 
 @mcp.tool()
-def search(path: str, query: str, regex: bool = False) -> dict:
-    """Search for text in paragraphs (full-text search).
+def grep(path: str, pattern: str, regex: bool = False) -> dict:
+    """Search for exact substring in paragraphs. NOT a semantic/fuzzy search.
+
+    This is a literal text grep, not a natural language search engine.
+    You must provide the exact text (or regex pattern) that appears in
+    the document.
 
     Args:
         path: Absolute path to the .doc/.docx file.
-        query: Text to search for. Exact match by default, or regex if regex=True.
-        regex: If true, treat query as a Python regular expression.
+        pattern: Exact substring to match (case-insensitive). Use regex=True
+                 for regular expression patterns.
+        regex: If true, treat pattern as a Python regular expression.
     """
     try:
         path, err = _handle_docx(path)
@@ -702,12 +707,12 @@ def search(path: str, query: str, regex: bool = False) -> dict:
         doc = Document(path)
         import re
         if regex:
-            pattern = re.compile(query, re.IGNORECASE)
+            regex_pattern = re.compile(pattern, re.IGNORECASE)
             def _match(text: str) -> bool:
-                return bool(pattern.search(text))
+                return bool(regex_pattern.search(text))
         else:
             def _match(text: str) -> bool:
-                return query.lower() in text.lower()
+                return pattern.lower() in text.lower()
 
         matches = []
         for i, para in enumerate(doc.paragraphs):
@@ -725,7 +730,7 @@ def search(path: str, query: str, regex: bool = False) -> dict:
         return {
             "status": "ok",
             "path": path,
-            "query": query,
+            "pattern": pattern,
             "regex": regex,
             "total_paragraphs": len(doc.paragraphs),
             "matches": matches,

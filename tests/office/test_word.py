@@ -835,11 +835,11 @@ def test_get_table_out_of_range():
         _cleanup(path)
 
 
-# ── search tests ──
+# ── grep tests ──
 
 
-def test_search_basic():
-    from carrot_mcp_office.word import search
+def test_grep_basic():
+    from carrot_mcp_office.word import grep
     path = _docx()
     try:
         from docx import Document
@@ -849,7 +849,7 @@ def test_search_basic():
         doc.add_paragraph("Hello Again")
         doc.save(path)
 
-        result = search(path, "Hello")
+        result = grep(path, "Hello")
         assert result["status"] == "ok"
         assert result["count"] == 2
         assert result["matches"][0]["index"] == 0
@@ -859,8 +859,8 @@ def test_search_basic():
         _cleanup(path)
 
 
-def test_search_case_insensitive():
-    from carrot_mcp_office.word import search
+def test_grep_case_insensitive():
+    from carrot_mcp_office.word import grep
     path = _docx()
     try:
         from docx import Document
@@ -868,15 +868,15 @@ def test_search_case_insensitive():
         doc.add_paragraph("Hello World")
         doc.save(path)
 
-        result = search(path, "hello")
+        result = grep(path, "hello")
         assert result["status"] == "ok"
         assert result["count"] == 1
     finally:
         _cleanup(path)
 
 
-def test_search_regex():
-    from carrot_mcp_office.word import search
+def test_grep_regex():
+    from carrot_mcp_office.word import grep
     path = _docx()
     try:
         from docx import Document
@@ -886,15 +886,15 @@ def test_search_regex():
         doc.add_paragraph("abc 789")
         doc.save(path)
 
-        result = search(path, r"abc \d+", regex=True)
+        result = grep(path, r"abc \d+", regex=True)
         assert result["status"] == "ok"
         assert result["count"] == 2
     finally:
         _cleanup(path)
 
 
-def test_search_regex_invalid():
-    from carrot_mcp_office.word import search
+def test_grep_regex_invalid():
+    from carrot_mcp_office.word import grep
     path = _docx()
     try:
         from docx import Document
@@ -902,15 +902,15 @@ def test_search_regex_invalid():
         doc.add_paragraph("test")
         doc.save(path)
 
-        result = search(path, r"[invalid", regex=True)
+        result = grep(path, r"[invalid", regex=True)
         assert result["status"] == "error"
         assert "Invalid regex" in result["message"]
     finally:
         _cleanup(path)
 
 
-def test_search_context():
-    from carrot_mcp_office.word import search
+def test_grep_context():
+    from carrot_mcp_office.word import grep
     path = _docx()
     try:
         from docx import Document
@@ -922,7 +922,7 @@ def test_search_context():
         doc.add_paragraph("line 4")
         doc.save(path)
 
-        result = search(path, "TARGET")
+        result = grep(path, "TARGET")
         assert result["status"] == "ok"
         m = result["matches"][0]
         assert m["context_before"] == ["line 1"]
@@ -931,8 +931,8 @@ def test_search_context():
         _cleanup(path)
 
 
-def test_search_no_match():
-    from carrot_mcp_office.word import search
+def test_grep_no_match():
+    from carrot_mcp_office.word import grep
     path = _docx()
     try:
         from docx import Document
@@ -940,7 +940,7 @@ def test_search_no_match():
         doc.add_paragraph("hello")
         doc.save(path)
 
-        result = search(path, "xyz")
+        result = grep(path, "xyz")
         assert result["status"] == "ok"
         assert result["count"] == 0
         assert result["matches"] == []

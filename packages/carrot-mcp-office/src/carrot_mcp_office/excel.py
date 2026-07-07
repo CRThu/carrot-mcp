@@ -69,26 +69,42 @@ def workbook_metadata(path: str) -> dict:
 
 
 @mcp.tool()
-def workbook_search(path: str, sheet: str, query: str) -> dict:
-    """Search for values in a sheet.
+def workbook_grep(path: str, sheet: str, pattern: str, regex: bool = False) -> dict:
+    """Search for exact substring in cell values. NOT a semantic/fuzzy search.
+
+    This is a literal text grep, not a natural language search engine.
+    You must provide the exact text (or regex pattern) that appears in a cell.
 
     Args:
         path: Absolute path to the .xls/.xlsx file.
         sheet: Sheet name to search in.
-        query: String to search for (case-insensitive substring match).
+        pattern: Exact substring to match (case-insensitive). Use regex=True
+                 for regular expression patterns.
+        regex: If true, treat pattern as a Python regular expression.
     """
     try:
+        import re
         wb = openpyxl.load_workbook(path, read_only=True)
         try:
             if sheet not in wb.sheetnames:
                 return {"status": "error", "message": f"Sheet '{sheet}' not found"}
             ws = wb[sheet]
+            if regex:
+                try:
+                    regex_pattern = re.compile(pattern, re.IGNORECASE)
+                except re.error as e:
+                    return {"status": "error", "message": f"Invalid regex: {e}"}
+                def _match(val: str) -> bool:
+                    return bool(regex_pattern.search(val))
+            else:
+                def _match(val: str) -> bool:
+                    return pattern.lower() in val.lower()
             results = []
             for row in ws.iter_rows():
                 for cell in row:
-                    if cell.value is not None and query.lower() in str(cell.value).lower():
+                    if cell.value is not None and _match(str(cell.value)):
                         results.append({"cell": cell.coordinate, "value": cell.value})
-            return {"status": "ok", "sheet": sheet, "query": query, "results": results, "count": len(results)}
+            return {"status": "ok", "sheet": sheet, "pattern": pattern, "regex": regex, "results": results, "count": len(results)}
         finally:
             wb.close()
     except Exception as e:

@@ -231,19 +231,21 @@ def get_pages(pdf_path: str, pages: str, multimodal: bool = True, force_ocr: boo
 
 
 @mcp.tool()
-def search(pdf_path: str, query: str, regex: bool = False) -> dict:
-    """Search for text in PDF pages (full-text search).
+def grep(pdf_path: str, pattern: str, regex: bool = False) -> dict:
+    """Search for exact substring in PDF pages. NOT a semantic/fuzzy search.
 
     Uses pymupdf native text extraction — works on text-based PDFs only,
-    not scanned/image-based PDFs.
+    not scanned/image-based PDFs. This is a literal text grep, not a
+    natural language search engine. You must provide the exact text (or
+    regex pattern) that appears in the document.
 
     Args:
         pdf_path: Path to the PDF file.
-        query: Text to search for. Case-insensitive exact match by default,
-               or regex if regex=True.
+        pattern: Exact substring to match (case-insensitive). Use regex=True
+                 for regular expression patterns.
 
     Returns:
-        {status, query, total_pages, matches: [{page, index, text,
+        {status, pattern, total_pages, matches: [{page, index, text,
          context_before, context_after}], count}
     """
     if not os.path.exists(pdf_path):
@@ -255,12 +257,12 @@ def search(pdf_path: str, query: str, regex: bool = False) -> dict:
         total_pages = doc.page_count
 
         if regex:
-            pattern = re_mod.compile(query, re_mod.IGNORECASE)
+            regex_pattern = re_mod.compile(pattern, re_mod.IGNORECASE)
             def _match(text: str) -> bool:
-                return bool(pattern.search(text))
+                return bool(regex_pattern.search(text))
         else:
             def _match(text: str) -> bool:
-                return query.lower() in text.lower()
+                return pattern.lower() in text.lower()
 
         matches = []
         for page_num in range(total_pages):
@@ -286,7 +288,7 @@ def search(pdf_path: str, query: str, regex: bool = False) -> dict:
         return {
             "status": "ok",
             "pdf_path": pdf_path,
-            "query": query,
+            "pattern": pattern,
             "regex": regex,
             "total_pages": total_pages,
             "matches": matches,

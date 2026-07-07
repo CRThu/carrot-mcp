@@ -19,7 +19,7 @@ def test_mcp_tools_registered():
     expected = [
         "version",
         "workbook_metadata",
-        "workbook_search",
+        "workbook_grep",
         "create_sheet",
         "rename_sheet",
         "delete_sheet",
