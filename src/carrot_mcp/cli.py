@@ -27,6 +27,7 @@ def cmd_run(args, servers):
         print(f"Unknown server: {args.server}")
         print(f"Available: {', '.join(sorted(servers))}")
         sys.exit(1)
+    print(f"carrot-mcp-{args.server} server ready", file=sys.stderr)
     servers[args.server].load().run()
 
 
