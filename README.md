@@ -173,6 +173,7 @@ python -m carrot_mcp_sys
 | `version` | Get server version info |
 | `get_toc` | Get table of contents with page ranges |
 | `get_pages` | Convert specific pages to markdown (supports multimodal/OCR/force_ocr) |
+| `grep` | Search for exact substring in PDF pages (case-insensitive, supports regex) |
 
 **Environment variables:**
 
@@ -194,7 +195,7 @@ python -m carrot_mcp_sys
 | Tool | Description |
 |------|-------------|
 | `workbook_metadata` | Get workbook metadata (sheet names, properties) |
-| `workbook_search` | Search for values in a sheet |
+| `workbook_grep` | Search for exact substring in cell values (case-insensitive, supports regex) |
 | `create_sheet` | Create a new sheet (creates workbook if needed) |
 | `rename_sheet` | Rename a sheet |
 | `delete_sheet` | Delete a sheet |
@@ -216,8 +217,9 @@ python -m carrot_mcp_sys
 |------|-------------|
 | `inspect` | Inspect document structure (paragraphs, tables, images) |
 | `get_outline` | Get document outline as tree + flat list |
-| `get_content_by_outline` | Get content for sections identified by outline indices |
+| `get_content` | Get paragraphs, tables, and images by section or paragraph indices |
 | `get_table` | Read table content as 2D array |
+| `grep` | Search for exact substring in paragraphs (case-insensitive, supports regex) |
 | `insert_para` | Insert a paragraph |
 | `modify_para` | Modify paragraph text |
 | `format_para` | Format a paragraph (style, alignment, font) |
@@ -275,7 +277,6 @@ Features:
 | `disconnect` | Disconnect from reader |
 | `find` | Find and activate an NFC card |
 | `transceive` | Raw frame exchange with bit-level control |
-| `exchange` | Data exchange with auto CRC |
 | `reqa` | ISO14443-A REQA |
 | `wupa` | ISO14443-A WUPA |
 | `halt` | ISO14443-A HALT |
