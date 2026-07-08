@@ -16,6 +16,44 @@ def test_parse_page_range_single():
     assert parse_page_range("1") == [1]
 
 
+def test_parse_page_range_int_single():
+    assert parse_page_range(1) == [1]
+
+
+def test_parse_page_range_int_large():
+    assert parse_page_range(100) == [100]
+
+
+def test_parse_page_range_int_zero_raises():
+    with pytest.raises(ValueError, match=">= 1"):
+        parse_page_range(0)
+
+
+def test_parse_page_range_int_negative_raises():
+    with pytest.raises(ValueError, match=">= 1"):
+        parse_page_range(-1)
+
+
+def test_parse_page_range_none():
+    assert parse_page_range(None) == []
+
+
+def test_parse_page_range_list_ints():
+    assert parse_page_range([1, 3, 5]) == [1, 3, 5]
+
+
+def test_parse_page_range_list_strs():
+    assert parse_page_range(["1-3", "5"]) == [1, 2, 3, 5]
+
+
+def test_parse_page_range_list_mixed():
+    assert parse_page_range([1, "3-5", 8]) == [1, 3, 4, 5, 8]
+
+
+def test_parse_page_range_list_empty():
+    assert parse_page_range([]) == []
+
+
 def test_parse_page_range_range():
     assert parse_page_range("1-5") == [1, 2, 3, 4, 5]
 

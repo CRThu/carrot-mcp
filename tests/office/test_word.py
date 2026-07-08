@@ -549,6 +549,40 @@ def test_get_content_empty_section():
             os.unlink(path)
 
 
+def test_get_content_int_single():
+    """Test get_content with int parameter for single section."""
+    path = _create_heading_docx()
+    try:
+        result = get_content(path, section=0)
+        meta, images = _parse_content_result(result)
+        assert meta["status"] == "ok"
+        assert meta["count"] == 1
+        sec = meta["sections"][0]
+        assert sec["title"] == "Chapter 1"
+        assert sec["level"] == 1
+        texts = [p["text"] for p in sec["paragraphs"]]
+        assert "Intro text" in texts
+    finally:
+        _cleanup(path)
+        if os.path.exists(path):
+            os.unlink(path)
+
+
+def test_get_content_str_single():
+    """Test get_content with string parameter for single section."""
+    path = _create_heading_docx()
+    try:
+        result = get_content(path, section="0")
+        meta, _ = _parse_content_result(result)
+        assert meta["status"] == "ok"
+        assert meta["count"] == 1
+        assert meta["sections"][0]["title"] == "Chapter 1"
+    finally:
+        _cleanup(path)
+        if os.path.exists(path):
+            os.unlink(path)
+
+
 def test_get_outline_deep_nesting():
     """Test outline with 3+ levels of nesting."""
     from docx import Document
@@ -809,6 +843,26 @@ def test_parse_sections_string_int():
 
 def test_parse_sections_negative():
     assert _parse_sections(["-1"], 10) == [-1]
+
+
+def test_parse_sections_int_single():
+    assert _parse_sections(0, 10) == [0]
+
+
+def test_parse_sections_int_middle():
+    assert _parse_sections(5, 10) == [5]
+
+
+def test_parse_sections_int_out_of_range():
+    assert _parse_sections(15, 10) == []
+
+
+def test_parse_sections_str_single():
+    assert _parse_sections("3", 10) == [3]
+
+
+def test_parse_sections_none():
+    assert _parse_sections(None, 10) == []
 
 
 def test_get_table():

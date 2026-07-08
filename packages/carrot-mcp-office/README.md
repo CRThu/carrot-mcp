@@ -54,7 +54,7 @@ All Excel tools accept `.xls`/`.xlsx` files (`.xls` auto-converted on Windows).
 | `insert_image` | Insert an image |
 | `delete_image` | Delete an inline image |
 | `get_outline` | Get document outline as tree + flat list. Use flat array indices (0-based position) with `get_content`. |
-| `get_content` | Get paragraphs, tables, and images by `section` (flat outline indices) or `paragraph` (document paragraph indices). Set `text_only=true` for leaner output. |
+| `get_content` | Get paragraphs, tables, and images by `section` or `paragraph`. Accepts int (single index), str (range like "0-4,6,8"), list of int/str, or None. Set `text_only=true` for leaner output. |
 | `grep` | Search for exact substring in paragraphs. Case-insensitive by default, or regex. Returns matches with index, style, and surrounding context. |
 
 All Word tools accept `.doc`/`.docx` files (`.doc` auto-converted on Windows).

@@ -465,13 +465,26 @@ def _extract_images_from_para(para) -> list[tuple[bytes, str]]:
     return images
 
 
-def _parse_sections(raw: list, max_index: int) -> list[int]:
+def _parse_sections(raw: list | int | str | None, max_index: int) -> list[int]:
     """Parse section spec into flat list of 0-based indices.
 
-    Accepts a list where each element is one of:
-      - int: direct index (e.g. [0, 2, 5])
-      - str: range or comma-separated list (e.g. ["0-4,6,8"] or ["0-9"])
+    Accepts:
+      - None: returns empty list
+      - int: single index (e.g. 0 → [0])
+      - str: range or comma-separated list (e.g. "0-4,6,8" or "0-9")
+      - list: where each element is one of:
+        - int: direct index (e.g. [0, 2, 5])
+        - str: range or comma-separated list (e.g. ["0-4,6,8"] or ["0-9"])
     """
+    if raw is None:
+        return []
+
+    if isinstance(raw, int):
+        return [raw] if 0 <= raw <= max_index else []
+
+    if isinstance(raw, str):
+        raw = [raw]
+
     result = []
     for item in raw:
         if isinstance(item, int):
@@ -542,7 +555,7 @@ def get_outline(path: str) -> dict:
 
 
 @mcp.tool()
-def get_content(path: str, section: list | None = None, paragraph: list | None = None, text_only: bool = False) -> list:
+def get_content(path: str, section: list | int | str | None = None, paragraph: list | int | str | None = None, text_only: bool = False) -> list:
     """Get content for specific outline sections or paragraphs.
 
     Use get_outline first to obtain section list, then pass section
@@ -553,11 +566,10 @@ def get_content(path: str, section: list | None = None, paragraph: list | None =
         path: Absolute path to the .doc/.docx file.
         section: Indices into the `flat` array returned by get_outline
             (NOT the `index` field inside each node — that is the
-            paragraph position in the document). Accepts a list where
-            each element is:
-            - int: direct index, e.g. [0, 2, 5]
-            - str: range or comma-separated list, e.g. ["0-9"] or
-              ["0-4,6,8"] or ["0-4", 6, 8]
+            paragraph position in the document). Accepts:
+            - int: single index, e.g. 0
+            - str: range or comma-separated list, e.g. "0-9" or "0-4,6,8"
+            - list: array of int/str, e.g. [0, 2, 5] or ["0-4,6,8"]
         paragraph: Direct paragraph indices (0-based position in the
             document). Use this when you know the exact paragraph
             position from grep/inspect results. Accepts same format

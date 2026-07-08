@@ -27,7 +27,7 @@ uv run python -m carrot_mcp_pdf
 |------|-------------|
 | `version` | Get server version info |
 | `get_toc` | Get table of contents with page ranges |
-| `get_pages` | Convert specific pages to markdown (supports multimodal/OCR/force_ocr) |
+| `get_pages` | Convert specific pages to markdown. Accepts `pages` as int (single page), str (range like '1-5,8,10-12'), list, or None. Returns `list[TextContent \| ImageContent]` |
 | `grep` | Search for exact substring in PDF pages. Case-insensitive by default, or regex. Returns matches with page number, text, and surrounding context. |
 
 ## Architecture

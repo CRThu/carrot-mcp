@@ -80,25 +80,53 @@ def save_cache(pdf_path: str, data: dict):
         json.dump(data_copy, f, ensure_ascii=False, indent=2)
 
 
-def parse_page_range(pages_str: str) -> list[int]:
-    """Parse a page range string like '1-5,8,10-12' into a sorted list of unique 1-based page numbers.
+def parse_page_range(pages: str | int | list | None, max_page: int | None = None) -> list[int]:
+    """Parse a page range specification into a sorted list of unique 1-based page numbers.
+
+    Accepts:
+        - None: returns empty list
+        - int: single page number (e.g. 5 → [5])
+        - str: range string like '1-5,8,10-12'
+        - list: array of int/str, e.g. [1, "3-5", 8]
 
     Raises ValueError for invalid ranges, non-positive numbers, or start > end.
     """
+    if pages is None:
+        return []
+
+    if isinstance(pages, int):
+        if pages < 1:
+            raise ValueError(f"Page numbers must be >= 1, got: {pages}")
+        return [pages]
+
+    if isinstance(pages, str):
+        pages = [pages]
+
+    if not isinstance(pages, list):
+        raise ValueError(f"Invalid type: {type(pages)}")
+
     result = []
-    for part in pages_str.split(","):
-        part = part.strip()
-        if "-" in part:
-            start, end = part.split("-", 1)
-            start_int, end_int = int(start), int(end)
-            if start_int < 1 or end_int < 1:
-                raise ValueError(f"Page numbers must be >= 1, got: {part}")
-            if start_int > end_int:
-                raise ValueError(f"Invalid range: {part} (start > end)")
-            result.extend(range(start_int, end_int + 1))
-        else:
-            val = int(part)
-            if val < 1:
-                raise ValueError(f"Page numbers must be >= 1, got: {val}")
-            result.append(val)
+    for item in pages:
+        if isinstance(item, int):
+            if item < 1:
+                raise ValueError(f"Page numbers must be >= 1, got: {item}")
+            result.append(item)
+        elif isinstance(item, str):
+            for part in item.split(","):
+                part = part.strip()
+                if not part:
+                    continue
+                if "-" in part and not part.startswith("-"):
+                    start, end = part.split("-", 1)
+                    start_int, end_int = int(start), int(end)
+                    if start_int < 1 or end_int < 1:
+                        raise ValueError(f"Page numbers must be >= 1, got: {part}")
+                    if start_int > end_int:
+                        raise ValueError(f"Invalid range: {part} (start > end)")
+                    result.extend(range(start_int, end_int + 1))
+                else:
+                    val = int(part)
+                    if val < 1:
+                        raise ValueError(f"Page numbers must be >= 1, got: {val}")
+                    result.append(val)
     return sorted(set(result))

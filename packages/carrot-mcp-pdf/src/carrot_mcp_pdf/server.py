@@ -101,12 +101,16 @@ def get_toc(pdf_path: str) -> dict:
 
 
 @mcp.tool()
-def get_pages(pdf_path: str, pages: str, multimodal: bool = True, force_ocr: bool = False) -> list:
+def get_pages(pdf_path: str, pages: str | int | list | None, multimodal: bool = True, force_ocr: bool = False) -> list:
     """Convert specific PDF pages to markdown.
 
     Args:
         pdf_path: Path to the PDF file.
-        pages: Page range string, e.g. '1-5,8,10-12'.
+        pages: Page number(s) to convert. Accepts:
+               - int: single page (e.g. 5 for page 5)
+               - str: page range (e.g. '1-5,8,10-12')
+               - list: array of int/str (e.g. [1, "3-5", 8])
+               - None: returns empty list
         multimodal: If True, return images as attachments you can analyze.
                     If False, return OCR text of images.
         force_ocr: Render entire page as image and OCR it. Use when normal conversion
