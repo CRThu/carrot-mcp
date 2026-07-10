@@ -158,8 +158,16 @@ Example:
 |------|-------------|
 | `version` | Get server version info |
 | `get_toc` | Get table of contents with page ranges |
-| `get_pages` | Convert specific pages to markdown. Accepts `pages` as int (single page), str (range like '1-5,8,10-12'), list of int/str, or None. Returns `list[TextContent \| ImageContent]` |
+| `get_pages` | Convert specific pages to markdown or rendered images. Accepts `pages` as int (single page), str (range like '1-5,8,10-12'), list of int/str, or None. Returns `list[TextContent \| ImageContent]` |
 | `grep` | Search for exact substring in PDF pages. Case-insensitive by default, or regex. Returns matches with page number, text, and surrounding context. |
+
+### get_pages parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `pdf_path` | str | — | Path to the PDF file |
+| `pages` | str/int/list/None | — | Page number(s) to convert |
+| `extract_text` | bool | `true` | `true` = extract text content; `false` = render pages as images |
 
 ### Architecture
 
@@ -167,32 +175,19 @@ Example:
 Application Layer (server.py — MCP tools, thin routing)
     ↓ get_toc/get_pages
 Conversion Layer (converter.py — pymupdf4llm → markdown + images)
-    ↓ force_ocr=True
-OCR Layer (ocr.py — litellm vision API)
-    ↓ multimodal=False
+    ↓ extract_text=False → render_page_as_image
 Cache Layer (cache.py — JSON: %APPDATA%/carrot-mcp/pdf/<hash>.json)
 ```
 
 - **server.py** — MCP tool definitions only, delegates to converter/cache
-- **converter.py** — PDF conversion, image processing, content parsing, VLM config
-- **ocr.py** — Vision model OCR via litellm (single responsibility)
+- **converter.py** — PDF conversion, image processing, content parsing
 - **cache.py** — Cache persistence, path management, parse_page_range, shared MIME_MAP
 
 - Cache: `%APPDATA%/carrot-mcp/pdf/<md5(pdf_path)>.json`
-- JSON structure: `{name, size, path, total_pages, force_ocr, toc, pages: {page_num: {content: [...], ocr_content: [...]}}}`
 - Content stored as ordered blocks: `[{type: "text", data: "..."}, {"type": "image", data: base64_str, mime: "..."}]`
-- Each page caches **both** formats: `content` (images as base64 strings) and `ocr_content` (OCR text or images)
 - `get_pages` returns `list[TextContent | ImageContent]` — metadata in first TextContent, images as ImageContent attachments (no base64 truncation)
-- `get_pages` metadata includes `failed_pages` list when force_ocr pages fail OCR
-- `multimodal=True` returns `content` with images as `ImageContent`, `multimodal=False` returns `ocr_content` as text
-- `force_ocr` is PDF-level flag (not per-page) — if a few pages are wrong, the whole PDF is likely wrong
-- When `force_ocr=True`: renders entire page as PNG image, calls OCR API (if VLM configured), caches result; if VLM not configured, falls back to returning the rendered page as image
-
-**Environment variables:**
-- `CARROT_MCP_MODEL`: Vision model name (must be configured if using OCR)
-- `CARROT_MCP_APIKEY`: API key for the vision model (must be configured if using OCR)
-- `CARROT_MCP_PROXY`: HTTP proxy URL for API calls
-- `CARROT_MCP_FORCE_MULTIMODAL`: `true` = always return images as attachments; `false` = always run OCR. When not set, uses tool parameter. If VLM not configured (no model/apikey), falls back to attachments with warning.
+- `extract_text=True`: pymupdf4llm extraction, images returned as ImageContent attachments
+- `extract_text=False`: renders each page as a PNG image and returns it as ImageContent
 
 ## Office MCP Server Tools
 

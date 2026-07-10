@@ -18,11 +18,10 @@ from carrot_mcp_pdf.cache import (
     save_cache,
 )
 from carrot_mcp_pdf.converter import (
-    VISION_API_KEY,
-    VISION_MODEL,
     get_total_pages,
-    ocr_page,
     parse_page_content,
+    read_image,
+    render_page_as_image,
 )
 
 mcp = FastMCP("carrot-mcp-pdf")
@@ -30,17 +29,15 @@ mcp = FastMCP("carrot-mcp-pdf")
 
 @mcp.tool()
 def version() -> dict:
-    """Get server version info and VLM configuration status.
+    """Get server version info.
 
     Returns:
-        {status, name, version, vlm_model, vlm_configured}
+        {status, name, version}
     """
     return {
         "status": "ok",
         "name": "carrot-mcp-pdf",
         "version": pkg_version("carrot-mcp-pdf"),
-        "vlm_model": VISION_MODEL,
-        "vlm_configured": bool(VISION_MODEL and VISION_API_KEY),
     }
 
 
@@ -101,8 +98,8 @@ def get_toc(pdf_path: str) -> dict:
 
 
 @mcp.tool()
-def get_pages(pdf_path: str, pages: str | int | list | None, multimodal: bool = True, force_ocr: bool = False) -> list:
-    """Convert specific PDF pages to markdown.
+def get_pages(pdf_path: str, pages: str | int | list | None, extract_text: bool = True) -> list:
+    """Convert specific PDF pages to markdown or rendered images.
 
     Args:
         pdf_path: Path to the PDF file.
@@ -111,11 +108,8 @@ def get_pages(pdf_path: str, pages: str | int | list | None, multimodal: bool = 
                - str: page range (e.g. '1-5,8,10-12')
                - list: array of int/str (e.g. [1, "3-5", 8])
                - None: returns empty list
-        multimodal: If True, return images as attachments you can analyze.
-                    If False, return OCR text of images.
-        force_ocr: Render entire page as image and OCR it. Use when normal conversion
-                   produces garbled text or missing content (e.g. scanned PDFs).
-                   Sets PDF-level flag so future requests also use OCR.
+        extract_text: If True, extract text content from PDF pages.
+                      If False, render entire pages as images and return them.
 
     Returns:
         list[TextContent | ImageContent] — first element is JSON metadata (status, total_pages),
@@ -139,29 +133,20 @@ def get_pages(pdf_path: str, pages: str | int | list | None, multimodal: bool = 
             "message": f"Pages out of range (total {total_pages}): {out_of_range}",
         }))]
 
-    if force_ocr:
-        if not cache.get("force_ocr"):
-            cache["pages"] = {}
-        cache["force_ocr"] = True
-        save_cache(pdf_path, cache)
+    meta = {
+        "status": "ok",
+        "total_pages": total_pages,
+        "pages": [str(p) for p in page_list],
+    }
+    result: list = [
+        TextContent(type="text", text=json.dumps(meta)),
+    ]
 
-    cached_pages = cache.get("pages", {})
-    uncached = [p for p in page_list if str(p) not in cached_pages]
-    failed_pages: list[int] = []
+    if extract_text:
+        cached_pages = cache.get("pages", {})
+        uncached = [p for p in page_list if str(p) not in cached_pages]
 
-    if uncached:
-        if force_ocr:
-            failed_pages = []
-            for page_num in uncached:
-                try:
-                    content = ocr_page(pdf_path, page_num)
-                    cached_pages[str(page_num)] = {
-                        "content": content,
-                        "ocr_content": content,
-                    }
-                except Exception:
-                    failed_pages.append(page_num)
-        else:
+        if uncached:
             with tempfile.TemporaryDirectory() as tmp_dir:
                 image_dir = os.path.join(tmp_dir, "images")
                 os.makedirs(image_dir, exist_ok=True)
@@ -187,49 +172,48 @@ def get_pages(pdf_path: str, pages: str | int | list | None, multimodal: bool = 
                 for i, chunk in enumerate(page_chunks):
                     page_num = uncached[i] if i < len(uncached) else chunk.get("metadata", {}).get("page", i + 1)
                     text = chunk.get("text", "") if isinstance(chunk, dict) else str(chunk)
-                    content, ocr_content = parse_page_content(text, image_dir)
-                    cached_pages[str(page_num)] = {
-                        "content": content,
-                        "ocr_content": ocr_content,
-                    }
+                    content = parse_page_content(text, image_dir)
+                    cached_pages[str(page_num)] = {"content": content}
 
-        cache["pages"] = cached_pages
-        save_cache(pdf_path, cache)
+            cache["pages"] = cached_pages
+            save_cache(pdf_path, cache)
 
-    use_ocr = not multimodal or cache.get("force_ocr")
-    meta = {
-        "status": "ok",
-        "total_pages": total_pages,
-        "pages": [str(p) for p in page_list],
-    }
-    if failed_pages:
-        meta["failed_pages"] = failed_pages
-    result: list = [
-        TextContent(type="text", text=json.dumps(meta)),
-    ]
+        for p in page_list:
+            page_data = cached_pages.get(str(p))
+            if not page_data or "content" not in page_data:
+                continue
 
-    for p in page_list:
-        page_data = cached_pages.get(str(p))
-        if not page_data:
-            continue
-
-        blocks = page_data["ocr_content"] if use_ocr and "ocr_content" in page_data else page_data["content"]
-        result.append(TextContent(type="text", text=f"[Page {p}]"))
-        img_idx = 0
-        for block in blocks:
-            if block["type"] == "text":
-                result.append(TextContent(type="text", text=block["data"]))
-            elif block["type"] == "image":
-                img_bytes = block["data"]
-                if isinstance(img_bytes, str):
-                    img_bytes = base64.b64decode(img_bytes.split(",")[-1]) if "," in img_bytes else base64.b64decode(img_bytes)
+            result.append(TextContent(type="text", text=f"[Page {p}]"))
+            img_idx = 0
+            for block in page_data["content"]:
+                if block["type"] == "text":
+                    result.append(TextContent(type="text", text=block["data"]))
+                elif block["type"] == "image":
+                    img_bytes = block["data"]
+                    if isinstance(img_bytes, str):
+                        img_bytes = base64.b64decode(img_bytes.split(",")[-1]) if "," in img_bytes else base64.b64decode(img_bytes)
+                    result.append(ImageContent(
+                        type="image",
+                        data=base64.b64encode(img_bytes).decode(),
+                        mimeType=block.get("mime", "image/png"),
+                        context=f"Page {p}, image {img_idx}",
+                    ))
+                    img_idx += 1
+    else:
+        for p in page_list:
+            try:
+                image_path = render_page_as_image(pdf_path, p)
+                img_bytes, mime = read_image(image_path)
+                result.append(TextContent(type="text", text=f"[Page {p}]"))
                 result.append(ImageContent(
                     type="image",
                     data=base64.b64encode(img_bytes).decode(),
-                    mimeType=block.get("mime", "image/png"),
-                    context=f"Page {p}, image {img_idx}",
+                    mimeType=mime,
+                    context=f"Page {p}",
                 ))
-                img_idx += 1
+                os.unlink(image_path)
+            except Exception as e:
+                result.append(TextContent(type="text", text=f"[Page {p}] Error: {e}"))
 
     return result
 

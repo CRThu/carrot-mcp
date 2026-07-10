@@ -1,6 +1,6 @@
 # carrot-mcp-pdf
 
-Carrot MCP PDF Server — convert PDFs to structured markdown with optional OCR.
+Carrot MCP PDF Server — convert PDFs to structured markdown or rendered page images.
 
 ## Installation
 
@@ -27,7 +27,7 @@ uv run python -m carrot_mcp_pdf
 |------|-------------|
 | `version` | Get server version info |
 | `get_toc` | Get table of contents with page ranges |
-| `get_pages` | Convert specific pages to markdown. Accepts `pages` as int (single page), str (range like '1-5,8,10-12'), list, or None. Returns `list[TextContent \| ImageContent]` |
+| `get_pages` | Convert specific pages to markdown or rendered images. Accepts `pages` as int (single page), str (range like '1-5,8,10-12'), list, or None. Returns `list[TextContent \| ImageContent]` |
 | `grep` | Search for exact substring in PDF pages. Case-insensitive by default, or regex. Returns matches with page number, text, and surrounding context. |
 
 ## Architecture
@@ -36,30 +36,17 @@ uv run python -m carrot_mcp_pdf
 Application Layer (server.py — MCP tools, thin routing)
     ↓ get_toc/get_pages
 Conversion Layer (converter.py — pymupdf4llm → markdown + images)
-    ↓ force_ocr=True
-OCR Layer (ocr.py — litellm vision API)
-    ↓ multimodal=False
+    ↓ extract_text=False → render_page_as_image
 Cache Layer (cache.py — JSON: %APPDATA%/carrot-mcp/pdf/<md5>.json)
 ```
 
 - **server.py** — MCP tool definitions only, delegates to converter/cache
-- **converter.py** — PDF conversion, image processing, content parsing, VLM config
-- **ocr.py** — Vision model OCR via litellm (single responsibility)
+- **converter.py** — PDF conversion, image processing, content parsing
 - **cache.py** — Cache persistence, path management, parse_page_range
 
 - **Cache**: `%APPDATA%/carrot-mcp/pdf/<md5>.json`
-- **Dual format**: each page caches both `content` (images as base64 strings) and `ocr_content` (OCR text or images)
-- **Force OCR**: PDF-level flag — renders page as image and OCRs it; if VLM not configured, falls back to returning the rendered image
+- **Content blocks**: each page caches ordered blocks `[{type: "text", data: ...}, {type: "image", data: base64_str, mime: ...}]`
 - **Image return**: images returned as MCP `ImageContent` attachments (no base64 truncation)
-
-## Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `CARROT_MCP_MODEL` | — | Vision model name for OCR (must be configured if using OCR) |
-| `CARROT_MCP_APIKEY` | — | API key for the vision model (must be configured if using OCR) |
-| `CARROT_MCP_PROXY` | — | HTTP proxy URL for API calls |
-| `CARROT_MCP_FORCE_MULTIMODAL` | — | `true` = always return images as MCP ImageContent attachments; `false` = always run OCR. When not set, uses tool parameter. If VLM not configured (no model/apikey), falls back to attachments with warning. |
 
 ## Development
 

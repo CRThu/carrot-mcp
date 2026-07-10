@@ -21,32 +21,6 @@ def test_version():
     assert result["status"] == "ok"
     assert result["name"] == "carrot-mcp-pdf"
     assert isinstance(result["version"], str)
-    assert "vlm_model" in result
-    assert "vlm_configured" in result
-    assert isinstance(result["vlm_configured"], bool)
-
-
-def test_version_vlm_configured():
-    with patch("carrot_mcp_pdf.server.VISION_MODEL", "gpt-4o"), \
-         patch("carrot_mcp_pdf.server.VISION_API_KEY", "key"):
-        result = version()
-        assert result["vlm_model"] == "gpt-4o"
-        assert result["vlm_configured"] is True
-
-
-def test_version_vlm_not_configured():
-    with patch("carrot_mcp_pdf.server.VISION_MODEL", None), \
-         patch("carrot_mcp_pdf.server.VISION_API_KEY", None):
-        result = version()
-        assert result["vlm_model"] is None
-        assert result["vlm_configured"] is False
-
-
-def test_version_vlm_partial():
-    with patch("carrot_mcp_pdf.server.VISION_MODEL", "gpt-4o"), \
-         patch("carrot_mcp_pdf.server.VISION_API_KEY", None):
-        result = version()
-        assert result["vlm_configured"] is False
 
 
 # ── MCP server ───────────────────────────────────────────────────────────────
@@ -163,13 +137,13 @@ def test_get_pages_from_cache(tmp_path):
 
     cached = {
         "pages": {
-            "1": {"content": [{"type": "text", "data": "cached"}], "ocr_content": [{"type": "text", "data": "ocr"}]},
+            "1": {"content": [{"type": "text", "data": "cached"}]},
         }
     }
 
     with patch("carrot_mcp_pdf.server.get_total_pages", return_value=3), \
          patch("carrot_mcp_pdf.server.load_cache", return_value=cached):
-        result = get_pages(str(pdf), "1", multimodal=True)
+        result = get_pages(str(pdf), "1")
 
     meta, blocks = _parse_result(result)
     assert meta["status"] == "ok"
@@ -177,26 +151,6 @@ def test_get_pages_from_cache(tmp_path):
     assert blocks[0].text == "[Page 1]"
     assert isinstance(blocks[1], TextContent)
     assert blocks[1].text == "cached"
-
-
-def test_get_pages_multimodal_false_returns_ocr(tmp_path):
-    pdf = tmp_path / "test.pdf"
-    pdf.write_bytes(b"fake pdf")
-
-    cached = {
-        "pages": {
-            "1": {"content": [{"type": "text", "data": "base64 img"}], "ocr_content": [{"type": "text", "data": "ocr text"}]},
-        }
-    }
-
-    with patch("carrot_mcp_pdf.server.get_total_pages", return_value=3), \
-         patch("carrot_mcp_pdf.server.load_cache", return_value=cached):
-        result = get_pages(str(pdf), "1", multimodal=False)
-
-    meta, blocks = _parse_result(result)
-    assert meta["status"] == "ok"
-    assert blocks[0].text == "[Page 1]"
-    assert blocks[1].text == "ocr text"
 
 
 def test_get_pages_image_returns_image_content(tmp_path):
@@ -210,13 +164,13 @@ def test_get_pages_image_returns_image_content(tmp_path):
                 {"type": "text", "data": "before"},
                 {"type": "image", "data": img_bytes, "mime": "image/png"},
                 {"type": "text", "data": "after"},
-            ], "ocr_content": [{"type": "text", "data": "ocr text"}]},
+            ]},
         }
     }
 
     with patch("carrot_mcp_pdf.server.get_total_pages", return_value=3), \
          patch("carrot_mcp_pdf.server.load_cache", return_value=cached):
-        result = get_pages(str(pdf), "1", multimodal=True)
+        result = get_pages(str(pdf), "1")
 
     meta, blocks = _parse_result(result)
     assert meta["status"] == "ok"
@@ -247,13 +201,13 @@ def test_get_pages_multiple_images_indexed(tmp_path):
                 {"type": "text", "data": "middle"},
                 {"type": "image", "data": img2, "mime": "image/jpeg"},
                 {"type": "text", "data": "end"},
-            ], "ocr_content": [{"type": "text", "data": "ocr"}]},
+            ]},
         }
     }
 
     with patch("carrot_mcp_pdf.server.get_total_pages", return_value=3), \
          patch("carrot_mcp_pdf.server.load_cache", return_value=cached):
-        result = get_pages(str(pdf), "1", multimodal=True)
+        result = get_pages(str(pdf), "1")
 
     meta, blocks = _parse_result(result)
     assert meta["status"] == "ok"
@@ -265,110 +219,54 @@ def test_get_pages_multiple_images_indexed(tmp_path):
     assert blocks[4].mimeType == "image/jpeg"
 
 
-def test_get_pages_force_ocr_returns_ocr_content(tmp_path):
+def test_get_pages_extract_text_false_returns_rendered_image(tmp_path):
+    """extract_text=False renders pages as images."""
     pdf = tmp_path / "test.pdf"
     pdf.write_bytes(b"fake pdf")
 
-    cached = {
-        "force_ocr": True,
-        "pages": {
-            "1": {"content": [{"type": "text", "data": "ocr result"}], "ocr_content": [{"type": "text", "data": "ocr result"}]},
-        }
-    }
-
-    with patch("carrot_mcp_pdf.server.get_total_pages", return_value=3), \
-         patch("carrot_mcp_pdf.server.load_cache", return_value=cached):
-        result = get_pages(str(pdf), "1", multimodal=True)
-
-    meta, blocks = _parse_result(result)
-    assert meta["status"] == "ok"
-    assert blocks[0].text == "[Page 1]"
-    assert blocks[1].text == "ocr result"
-
-
-def test_get_pages_force_ocr_clears_cache(tmp_path):
-    pdf = tmp_path / "test.pdf"
-    pdf.write_bytes(b"fake pdf")
-
-    old_cache = {
-        "pages": {
-            "1": {"content": [{"type": "text", "data": "old garbled"}], "ocr_content": []},
-            "2": {"content": [{"type": "text", "data": "old garbled"}], "ocr_content": []},
-        }
-    }
-
-    with patch("carrot_mcp_pdf.server.get_total_pages", return_value=3), \
-         patch("carrot_mcp_pdf.server.load_cache", return_value=old_cache), \
-         patch("carrot_mcp_pdf.server.save_cache") as mock_save, \
-         patch("carrot_mcp_pdf.server.ocr_page", return_value=[{"type": "text", "data": "new ocr"}]):
-        result = get_pages(str(pdf), "1", force_ocr=True)
-
-    meta, blocks = _parse_result(result)
-    assert meta["status"] == "ok"
-    saved_cache = mock_save.call_args[0][1]
-    assert saved_cache["force_ocr"] is True
-    assert saved_cache["pages"]["1"] == {"content": [{"type": "text", "data": "new ocr"}], "ocr_content": [{"type": "text", "data": "new ocr"}]}
-
-
-def test_get_pages_force_ocr_preserves_cache_if_already_set(tmp_path):
-    pdf = tmp_path / "test.pdf"
-    pdf.write_bytes(b"fake pdf")
-
-    old_cache = {
-        "force_ocr": True,
-        "pages": {
-            "1": {"content": [{"type": "text", "data": "existing ocr"}], "ocr_content": [{"type": "text", "data": "existing ocr"}]},
-        }
-    }
-
-    with patch("carrot_mcp_pdf.server.get_total_pages", return_value=2), \
-         patch("carrot_mcp_pdf.server.load_cache", return_value=old_cache), \
-         patch("carrot_mcp_pdf.server.save_cache"):
-        result = get_pages(str(pdf), "1", force_ocr=True)
-
-    meta, blocks = _parse_result(result)
-    assert meta["status"] == "ok"
-    assert blocks[0].text == "[Page 1]"
-    assert blocks[1].text == "existing ocr"
-
-
-def test_get_pages_force_ocr_reports_failed_pages(tmp_path):
-    pdf = tmp_path / "test.pdf"
-    pdf.write_bytes(b"fake pdf")
-
-    def ocr_side_effect(path, page_num):
-        if page_num == 2:
-            raise RuntimeError("API timeout")
-        return [{"type": "text", "data": f"ocr page {page_num}"}]
+    img_bytes = b"\x89PNG\r\n\x1a\n"
 
     with patch("carrot_mcp_pdf.server.get_total_pages", return_value=3), \
          patch("carrot_mcp_pdf.server.load_cache", return_value={"pages": {}}), \
-         patch("carrot_mcp_pdf.server.save_cache"), \
-         patch("carrot_mcp_pdf.server.ocr_page", side_effect=ocr_side_effect):
-        result = get_pages(str(pdf), "1-3", force_ocr=True)
+         patch("carrot_mcp_pdf.server.render_page_as_image", return_value="/tmp/page.png"), \
+         patch("carrot_mcp_pdf.server.read_image", return_value=(img_bytes, "image/png")), \
+         patch("carrot_mcp_pdf.server.os.unlink"):
+        result = get_pages(str(pdf), "1", extract_text=False)
 
     meta, blocks = _parse_result(result)
     assert meta["status"] == "ok"
-    assert meta["failed_pages"] == [2]
     assert blocks[0].text == "[Page 1]"
-    assert blocks[1].text == "ocr page 1"
-    assert blocks[2].text == "[Page 3]"
-    assert blocks[3].text == "ocr page 3"
+    assert isinstance(blocks[1], ImageContent)
+    assert blocks[1].mimeType == "image/png"
+    assert blocks[1].context == "Page 1"
+    assert base64.b64decode(blocks[1].data) == img_bytes
 
 
-def test_get_pages_no_failed_pages_when_all_succeed(tmp_path):
+def test_get_pages_extract_text_false_multiple_pages(tmp_path):
+    """extract_text=False renders each page as a separate image."""
     pdf = tmp_path / "test.pdf"
     pdf.write_bytes(b"fake pdf")
 
-    with patch("carrot_mcp_pdf.server.get_total_pages", return_value=2), \
-         patch("carrot_mcp_pdf.server.load_cache", return_value={"pages": {}}), \
-         patch("carrot_mcp_pdf.server.save_cache"), \
-         patch("carrot_mcp_pdf.server.ocr_page", return_value=[{"type": "text", "data": "ocr"}]):
-        result = get_pages(str(pdf), "1-2", force_ocr=True)
+    img_bytes = b"\x89PNG\r\n\x1a\n"
 
-    meta, _ = _parse_result(result)
+    def render_side_effect(path, page_num):
+        return f"/tmp/page_{page_num}.png"
+
+    with patch("carrot_mcp_pdf.server.get_total_pages", return_value=3), \
+         patch("carrot_mcp_pdf.server.load_cache", return_value={"pages": {}}), \
+         patch("carrot_mcp_pdf.server.render_page_as_image", side_effect=render_side_effect), \
+         patch("carrot_mcp_pdf.server.read_image", return_value=(img_bytes, "image/png")), \
+         patch("carrot_mcp_pdf.server.os.unlink"):
+        result = get_pages(str(pdf), "1-2", extract_text=False)
+
+    meta, blocks = _parse_result(result)
     assert meta["status"] == "ok"
-    assert "failed_pages" not in meta
+    # 2 pages * (1 TextContent + 1 ImageContent) = 4
+    assert len(blocks) == 4
+    assert blocks[0].text == "[Page 1]"
+    assert isinstance(blocks[1], ImageContent)
+    assert blocks[2].text == "[Page 2]"
+    assert isinstance(blocks[3], ImageContent)
 
 
 def test_get_pages_pymupdf4llm_returns_str(tmp_path):
