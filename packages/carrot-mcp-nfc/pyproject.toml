@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "mcp>=1.28.0",
-    "nfcscript==0.0.9",
+    "nfcscript>=0.0.16",
 ]
 
 [project.scripts]

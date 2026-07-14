@@ -7,19 +7,18 @@ from collections import deque
 from importlib.metadata import version as pkg_version
 
 import nfc
-from loguru import logger
 from mcp.server.fastmcp import FastMCP
-from nfctester.drivers.card_reader import CardInfo
+from nfc import trace as nfc_trace
 from nfctester.registry import CardReaderRegistry, TransportRegistry
+from nfctester.trace import TraceEvent
 
 mcp = FastMCP("carrot-mcp-nfc")
 
 _trace_buffer: deque[dict] = deque(maxlen=500)
-_trace_sink_id: int | None = None
+_trace_sink_ref: object | None = None
 
 
 def _cleanup():
-    global _trace_sink_id
     try:
         nfc.close()
     except Exception:
@@ -40,30 +39,30 @@ def _is_connected() -> bool:
 
 
 def _setup_trace_sink():
-    global _trace_sink_id
+    global _trace_sink_ref
     _remove_trace_sink()
 
-    def _sink(message):
-        record = message.record
+    def _sink(event: TraceEvent):
         entry = {
-            "time": record["time"].strftime("%H:%M:%S.%f")[:-3],
-            "level": record["level"].name,
-            "layer": record["extra"].get("layer", ""),
-            "message": str(record["message"]),
+            "time": time.strftime("%H:%M:%S", time.localtime(event.timestamp)),
+            "layer": event.layer,
+            "direction": event.direction,
+            "message": event.formatted,
         }
         _trace_buffer.append(entry)
 
-    _trace_sink_id = logger.add(_sink, level=0, format="{message}")
+    _trace_sink_ref = _sink
+    nfc_trace.add_sink(_sink)
 
 
 def _remove_trace_sink():
-    global _trace_sink_id
-    if _trace_sink_id is not None:
+    global _trace_sink_ref
+    if _trace_sink_ref is not None:
         try:
-            logger.remove(_trace_sink_id)
+            nfc_trace.remove_sink(_trace_sink_ref)
         except Exception:
             pass
-        _trace_sink_id = None
+        _trace_sink_ref = None
 
 
 @mcp.tool()
@@ -139,7 +138,7 @@ def disconnect() -> dict:
 
 
 @mcp.tool()
-def find(low_level: bool = False) -> dict:
+def active(low_level: bool = False) -> dict:
     """Find and activate an NFC card.
 
     Args:
@@ -152,52 +151,19 @@ def find(low_level: bool = False) -> dict:
         return _not_connected()
 
     try:
-        if low_level:
-            card_info = _low_level_find()
-        else:
-            card_info = nfc.active()
+        card_info = nfc.active(low_layer=low_level)
 
         if card_info is None:
             return {"status": "error", "message": "No card found"}
 
         return {
             "status": "ok",
-            "uid": card_info.uid.hex().upper(),
-            "atq": card_info.atq.hex().upper(),
+            "uid": bytes(card_info.uid).hex().upper(),
+            "atq": bytes(card_info.atq).hex().upper(),
             "sak": hex(card_info.sak),
         }
     except Exception as e:
         return {"status": "error", "message": str(e)}
-
-
-def _low_level_find():
-    reader = nfc.get_reader()
-
-    res_reqa = nfc.reqa()
-    if not res_reqa or res_reqa.data is None:
-        return None
-    atq = res_reqa.data
-
-    full_uid = []
-    sak = 0
-    for cl in [1, 2, 3]:
-        res = nfc.anticoll(cl_level=cl, nvb=0x20)
-        if not res or res.data is None:
-            return None
-
-        data = res.data
-        has_next = (data[0] == 0x88)
-        uid_to_select = list(data[0:5])
-        sak_res = nfc.select(cl_level=cl, uid=uid_to_select)
-
-        if has_next:
-            full_uid.extend(data[1:4])
-        else:
-            full_uid.extend(data[0:4])
-            sak = sak_res[0] if sak_res else 0
-            break
-
-    return CardInfo(uid=bytes(full_uid), atq=bytes(atq), sak=sak)
 
 
 @mcp.tool()
@@ -230,17 +196,24 @@ def transceive(
     try:
         if last_tx_bits != 0:
             res = nfc.transceive_bits(list(raw), last_tx_bits=last_tx_bits, tx_crc=tx_crc, rx_crc=rx_crc)
+            if not res.data:
+                return {"status": "error", "message": "No response from card"}
+            return {
+                "status": "ok",
+                "data": bytes(res.data).hex().upper(),
+                "length": len(res.data),
+                "last_rx_bits": res.bits,
+            }
         else:
-            res = nfc.get_reader().transceive(raw, tx_crc=tx_crc, rx_crc=rx_crc)
-
-        if res is None or res.data is None:
-            return {"status": "error", "message": "No response from card"}
-        return {
-            "status": "ok",
-            "data": res.data.hex().upper(),
-            "length": len(res.data),
-            "last_rx_bits": res.rx_bits,
-        }
+            res = nfc.transceive(list(raw), tx_crc=tx_crc, rx_crc=rx_crc)
+            if not res:
+                return {"status": "error", "message": "No response from card"}
+            return {
+                "status": "ok",
+                "data": bytes(res).hex().upper(),
+                "length": len(res),
+                "last_rx_bits": 0,
+            }
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -257,11 +230,11 @@ def reqa() -> dict:
 
     try:
         res = nfc.reqa()
-        if res is None or res.data is None:
+        if not res.data:
             return {"status": "error", "message": "No response"}
         return {
             "status": "ok",
-            "data": res.data.hex().upper(),
+            "data": bytes(res.data).hex().upper(),
             "length": len(res.data),
         }
     except Exception as e:
@@ -280,11 +253,11 @@ def wupa() -> dict:
 
     try:
         res = nfc.wupa()
-        if res is None or res.data is None:
+        if not res.data:
             return {"status": "error", "message": "No response"}
         return {
             "status": "ok",
-            "data": res.data.hex().upper(),
+            "data": bytes(res.data).hex().upper(),
             "length": len(res.data),
         }
     except Exception as e:
@@ -309,70 +282,6 @@ def halt() -> dict:
 
 
 @mcp.tool()
-def select(cl_level: int, uid: str) -> dict:
-    """Send ISO14443-A SELECT command.
-
-    Args:
-        cl_level: Cascade level (1, 2, or 3)
-        uid: 5-byte UID with BCC as hex string (e.g. "04AABBCCDD77")
-
-    Returns:
-        {status, data} or {status, message} on error
-    """
-    if not _is_connected():
-        return _not_connected()
-
-    try:
-        uid_bytes = bytes.fromhex(uid)
-    except ValueError:
-        return {"status": "error", "message": "Invalid hex string"}
-
-    try:
-        res = nfc.select(cl_level=cl_level, uid=list(uid_bytes))
-        if res is None:
-            return {"status": "error", "message": "No response"}
-        return {
-            "status": "ok",
-            "data": bytes(res).hex().upper(),
-        }
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
-
-
-@mcp.tool()
-def anticoll(cl_level: int = 1, nvb: int = 0x20, uid_prefix: str = "") -> dict:
-    """Send ISO14443-A ANTICOLL (anti-collision) command.
-
-    Args:
-        cl_level: Cascade level (1, 2, or 3)
-        nvb: Number of Valid Bits (default 0x20)
-        uid_prefix: Known UID prefix bytes as hex string (default empty)
-
-    Returns:
-        {status, data, bits} or {status, message} on error
-    """
-    if not _is_connected():
-        return _not_connected()
-
-    try:
-        prefix = list(bytes.fromhex(uid_prefix)) if uid_prefix else []
-    except ValueError:
-        return {"status": "error", "message": "Invalid hex string"}
-
-    try:
-        res = nfc.anticoll(cl_level=cl_level, nvb=nvb, uid_prefix=prefix)
-        if res is None or res.data is None:
-            return {"status": "error", "message": "No response"}
-        return {
-            "status": "ok",
-            "data": res.data.hex().upper(),
-            "bits": res.rx_bits,
-        }
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
-
-
-@mcp.tool()
 def field_on() -> dict:
     """Turn on the RF field.
 
@@ -382,7 +291,7 @@ def field_on() -> dict:
     if not _is_connected():
         return _not_connected()
     try:
-        nfc.field_on()
+        nfc.get_reader().rf_field = True
         return {"status": "ok"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
@@ -398,30 +307,30 @@ def field_off() -> dict:
     if not _is_connected():
         return _not_connected()
     try:
-        nfc.field_off()
+        nfc.get_reader().rf_field = False
         return {"status": "ok"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
 
 @mcp.tool()
-def trace_get(level: str = "", layer: str = "") -> dict:
+def trace_get(layer: str = "", direction: str = "") -> dict:
     """Get accumulated trace log entries as JSON.
 
     Args:
-        level: Filter by log level (e.g. "DEBUG", "INFO"). Empty = all levels.
-        layer: Filter by layer name (e.g. "DRIVER", "PROTOCOL"). Empty = all layers.
+        layer: Filter by layer name (e.g. "driver", "protocol"). Empty = all layers.
+        direction: Filter by direction ("TX" or "RX"). Empty = all directions.
 
     Returns:
-        {status, entries: [{time, level, layer, message}]}
+        {status, entries: [{time, layer, direction, message}]}
     """
     entries = list(_trace_buffer)
-    if level:
-        level_upper = level.upper()
-        entries = [e for e in entries if e["level"] == level_upper]
     if layer:
-        layer_upper = layer.upper()
-        entries = [e for e in entries if e["layer"] == layer_upper]
+        layer_lower = layer.lower()
+        entries = [e for e in entries if e["layer"] == layer_lower]
+    if direction:
+        dir_upper = direction.upper()
+        entries = [e for e in entries if e["direction"] == dir_upper]
     return {"status": "ok", "entries": entries}
 
 
@@ -471,72 +380,82 @@ def _script_op_transceive(step: int, args: dict) -> dict:
 
     if last_tx_bits != 0:
         res = nfc.transceive_bits(list(raw), last_tx_bits=last_tx_bits, tx_crc=tx_crc, rx_crc=rx_crc)
+        if not res.data:
+            return {"op": "transceive", "step": step, "status": "error", "message": "No response"}
+        data_hex = bytes(res.data).hex().upper()
+        result = {
+            "op": "transceive",
+            "step": step,
+            "status": "ok",
+            "data": data_hex,
+            "length": len(res.data),
+            "last_rx_bits": res.bits,
+        }
     else:
-        res = nfc.get_reader().transceive(raw, tx_crc=tx_crc, rx_crc=rx_crc)
+        res = nfc.transceive(list(raw), tx_crc=tx_crc, rx_crc=rx_crc)
+        if not res:
+            return {"op": "transceive", "step": step, "status": "error", "message": "No response"}
+        data_hex = bytes(res).hex().upper()
+        result = {
+            "op": "transceive",
+            "step": step,
+            "status": "ok",
+            "data": data_hex,
+            "length": len(res),
+            "last_rx_bits": 0,
+        }
 
-    if res is None or res.data is None:
-        return {"op": "transceive", "step": step, "status": "error", "message": "No response"}
-
-    result = {
-        "op": "transceive",
-        "step": step,
-        "status": "ok",
-        "data": res.data.hex().upper(),
-        "length": len(res.data),
-        "last_rx_bits": res.rx_bits,
-    }
-
-    return _apply_expect(result, args, res.data.hex().upper())
+    return _apply_expect(result, args, data_hex)
 
 
-def _script_op_find(step: int, args: dict) -> dict:
+def _script_op_active(step: int, args: dict) -> dict:
     low_level = args.get("low_level", False)
-    if low_level:
-        card_info = _low_level_find()
-    else:
-        card_info = nfc.active()
+    card_info = nfc.active(low_layer=low_level)
 
     if card_info is None:
-        return {"op": "find", "step": step, "status": "error", "message": "No card found"}
+        return {"op": "active", "step": step, "status": "error", "message": "No card found"}
 
+    uid_hex = bytes(card_info.uid).hex().upper()
     result = {
-        "op": "find",
+        "op": "active",
         "step": step,
         "status": "ok",
-        "uid": card_info.uid.hex().upper(),
-        "atq": card_info.atq.hex().upper(),
+        "uid": uid_hex,
+        "atq": bytes(card_info.atq).hex().upper(),
         "sak": hex(card_info.sak),
     }
 
-    return _apply_expect(result, args, card_info.uid.hex().upper())
+    return _apply_expect(result, args, uid_hex)
 
 
 def _script_op_reqa(step: int, args: dict) -> dict:
     res = nfc.reqa()
-    if res is None or res.data is None:
+    if not res.data:
         return {"op": "reqa", "step": step, "status": "error", "message": "No response"}
+    data_hex = bytes(res.data).hex().upper()
     result = {
         "op": "reqa",
         "step": step,
         "status": "ok",
-        "data": res.data.hex().upper(),
+        "data": data_hex,
         "length": len(res.data),
     }
-    return _apply_expect(result, args, res.data.hex().upper())
+    return _apply_expect(result, args, data_hex)
 
 
 def _script_op_wupa(step: int, args: dict) -> dict:
     res = nfc.wupa()
-    if res is None or res.data is None:
+    if not res.data:
         return {"op": "wupa", "step": step, "status": "error", "message": "No response"}
+    data_hex = bytes(res.data).hex().upper()
     result = {
         "op": "wupa",
         "step": step,
         "status": "ok",
-        "data": res.data.hex().upper(),
+        "data": data_hex,
         "length": len(res.data),
     }
-    return _apply_expect(result, args, res.data.hex().upper())
+    return _apply_expect(result, args, data_hex)
 
 
 def _script_op_halt(step: int, args: dict) -> dict:
@@ -544,54 +463,13 @@ def _script_op_halt(step: int, args: dict) -> dict:
     return {"op": "halt", "step": step, "status": "ok"}
 
 
-def _script_op_select(step: int, args: dict) -> dict:
-    try:
-        uid_bytes = bytes.fromhex(args.get("uid", ""))
-    except ValueError:
-        return {"op": "select", "step": step, "status": "error", "message": "Invalid hex string"}
-    cl_level = args.get("cl_level", 1)
-
-    res = nfc.select(cl_level=cl_level, uid=list(uid_bytes))
-    if res is None:
-        return {"op": "select", "step": step, "status": "error", "message": "No response"}
-    result = {
-        "op": "select",
-        "step": step,
-        "status": "ok",
-        "data": bytes(res).hex().upper(),
-    }
-    return _apply_expect(result, args, bytes(res).hex().upper())
-
-
-def _script_op_anticoll(step: int, args: dict) -> dict:
-    cl_level = args.get("cl_level", 1)
-    nvb = args.get("nvb", 0x20)
-    uid_prefix_hex = args.get("uid_prefix", "")
-    try:
-        prefix = list(bytes.fromhex(uid_prefix_hex)) if uid_prefix_hex else []
-    except ValueError:
-        return {"op": "anticoll", "step": step, "status": "error", "message": "Invalid hex string"}
-
-    res = nfc.anticoll(cl_level=cl_level, nvb=nvb, uid_prefix=prefix)
-    if res is None or res.data is None:
-        return {"op": "anticoll", "step": step, "status": "error", "message": "No response"}
-    result = {
-        "op": "anticoll",
-        "step": step,
-        "status": "ok",
-        "data": res.data.hex().upper(),
-        "bits": res.rx_bits,
-    }
-    return _apply_expect(result, args, res.data.hex().upper())
-
-
 def _script_op_field_on(step: int, args: dict) -> dict:
-    nfc.field_on()
+    nfc.get_reader().rf_field = True
     return {"op": "field_on", "step": step, "status": "ok"}
 
 
 def _script_op_field_off(step: int, args: dict) -> dict:
-    nfc.field_off()
+    nfc.get_reader().rf_field = False
     return {"op": "field_off", "step": step, "status": "ok"}
 
 
@@ -603,12 +481,10 @@ def _script_op_wait(step: int, args: dict) -> dict:
 
 _SCRIPT_OPS = {
     "transceive": _script_op_transceive,
-    "find": _script_op_find,
+    "active": _script_op_active,
     "reqa": _script_op_reqa,
     "wupa": _script_op_wupa,
     "halt": _script_op_halt,
-    "select": _script_op_select,
-    "anticoll": _script_op_anticoll,
     "field_on": _script_op_field_on,
     "field_off": _script_op_field_off,
     "wait": _script_op_wait,
@@ -622,17 +498,15 @@ def script(steps: list[dict]) -> list[dict]:
     Args:
         steps: List of operations. Each step is a dict with 'op' field:
             - {"op": "transceive", "data": "<hex>", "tx_crc"?: bool, "rx_crc"?: bool, "last_tx_bits"?: int, "expect"?: "<hex>", "expect_bits"?: int, "on_mismatch"?: "stop"|"continue"}
-            - {"op": "find", "low_level"?: bool, "expect"?: "<hex>", "expect_bits"?: int, "on_mismatch"?: "stop"|"continue"}
+            - {"op": "active", "low_level"?: bool, "expect"?: "<hex>", "expect_bits"?: int, "on_mismatch"?: "stop"|"continue"}
             - {"op": "reqa", "expect"?: "<hex>", "expect_bits"?: int, "on_mismatch"?: "stop"|"continue"}
             - {"op": "wupa", "expect"?: "<hex>", "expect_bits"?: int, "on_mismatch"?: "stop"|"continue"}
             - {"op": "halt"}
-            - {"op": "select", "cl_level": int, "uid": "<hex>", "expect"?: "<hex>", "expect_bits"?: int, "on_mismatch"?: "stop"|"continue"}
-            - {"op": "anticoll", "cl_level"?: int, "nvb"?: int, "uid_prefix"?: "<hex>", "expect"?: "<hex>", "expect_bits"?: int, "on_mismatch"?: "stop"|"continue"}
             - {"op": "field_on"}
             - {"op": "field_off"}
             - {"op": "wait", "ms": int}
 
-        Data ops (transceive, find, reqa, wupa, select, anticoll) support:
+        Data ops (transceive, active, reqa, wupa) support:
             - expect: Expected hex data for response matching (case-insensitive)
             - expect_bits: Number of valid bits in the last byte (1-8). Only the lower N
               bits of the last byte are compared; upper bits are treated as 0.
@@ -645,10 +519,8 @@ def script(steps: list[dict]) -> list[dict]:
         - step: Step index (0-based)
         - status: "ok" or "error"
         - For transceive: {data, length, last_rx_bits}
-        - For find: {uid, atq, sak}
+        - For active: {uid, atq, sak}
         - For reqa/wupa: {data, length}
-        - For select: {data}
-        - For anticoll: {data, bits}
         - For wait: {ms}
         - When expect provided: {matched: bool, expected?: str}
         Stops on first error or expect mismatch (when on_mismatch="stop").

@@ -259,28 +259,26 @@ Backup Layer (backup.py — auto-versioning on every write)
 | `list_readers` | List available reader types and transports |
 | `connect` | Connect to NFC reader (port, reader_type, transport) |
 | `disconnect` | Disconnect from reader |
-| `find` | Find and activate an NFC card (returns uid, atq, sak) |
+| `active` | Find and activate an NFC card (returns uid, atq, sak) |
 | `transceive` | Raw frame exchange with bit-level control (InCommunicateThru) |
 | `reqa` | ISO14443-A REQA (7-bit short frame) |
 | `wupa` | ISO14443-A WUPA (7-bit short frame) |
 | `halt` | ISO14443-A HALT |
-| `select` | ISO14443-A SELECT |
-| `anticoll` | ISO14443-A ANTICOLL (anti-collision) |
 | `field_on` | Turn on RF field |
 | `field_off` | Turn off RF field |
 | `script` | Execute a sequence of NFC operations (supports `expect`/`on_mismatch` matching) |
-| `trace_get` | Get trace log entries (supports level/layer filtering) |
+| `trace_get` | Get trace log entries (supports layer/direction filtering) |
 | `trace_clear` | Clear trace log buffer |
 
 ### Architecture
 
 ```
 Application Layer (MCP tools)
-    ↓ connect/find/transceive/reqa/etc
+    ↓ connect/active/transceive/reqa/etc
 Wrapper Layer (server.py - state management, error handling, trace capture)
     ↓ imports nfcscript functions
 Library Layer (nfcscript)
-    ├─ active/reqa/wupa/halt/select/anticoll - ISO14443-3A primitives
+    ├─ active/reqa/wupa/halt - ISO14443-3A primitives
     ├─ transceive/transceive_bits - data exchange
     ├─ field_on/field_off - RF field control
     └─ connect/close/get_reader - lifecycle
@@ -290,11 +288,10 @@ Hardware Layer (nfctester readers: PN532 / CLRC663 via serial)
 - Built on `nfcscript` which wraps `nfctester` driver layer
 - Single reader session managed via `nfcscript` global state (`_NFCState`)
 - `_cleanup()` registered via `atexit` for safe shutdown
-- `find()` supports both high-level (`nfc.active()`) and low-level (manual anticollision) modes
-- `find(low_level=True)` performs multi-cascade anticollision with per-step exception handling
+- `active()` supports both high-level (`nfc.active()`) and low-level (`nfc.active(low_layer=True)`) anticollision modes
 - `transceive()` exposes `last_tx_bits` for non-byte-aligned commands (e.g. REQA 7 bits)
 - `script` hex validation is done inside each handler (consistent "Invalid hex string" errors)
-- Trace output captured via loguru sink, returned as JSON via `trace_get()`
+- Trace output captured via `nfc_trace.add_sink()` callback, returned as JSON via `trace_get()`
 
 ## Sys MCP Server Tools
 

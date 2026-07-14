@@ -10,16 +10,14 @@ Carrot MCP NFC Server — wraps [nfcscript](https://github.com/CRThu/nfcscript) 
 | `list_readers` | List available reader types and transports |
 | `connect` | Connect to NFC reader (port, reader_type, transport) |
 | `disconnect` | Disconnect from reader |
-| `find` | Find and activate an NFC card (returns uid, atq, sak) |
+| `active` | Find and activate an NFC card (returns uid, atq, sak) |
 | `transceive` | Raw frame exchange with bit-level control (InCommunicateThru) |
 | `reqa` | ISO14443-A REQA (7-bit short frame) |
 | `wupa` | ISO14443-A WUPA (7-bit short frame) |
 | `halt` | ISO14443-A HALT |
-| `select` | ISO14443-A SELECT |
-| `anticoll` | ISO14443-A ANTICOLL (anti-collision) |
 | `field_on` / `field_off` | Control RF field |
 | `script` | Execute a sequence of NFC operations (see below) |
-| `trace_get` | Get trace log entries (supports level/layer filtering) |
+| `trace_get` | Get trace log entries (supports layer/direction filtering) |
 | `trace_clear` | Clear trace log buffer |
 
 ## Supported Readers
@@ -48,19 +46,17 @@ uv run carrot-mcp nfc
 | Op | Params | Description |
 |----|--------|-------------|
 | `transceive` | `data` (hex), `tx_crc`?, `rx_crc`?, `last_tx_bits`? | Raw frame exchange |
-| `find` | `low_level`? (bool) | Find and activate card |
+| `active` | `low_level`? (bool) | Find and activate card |
 | `reqa` | — | REQA (7-bit short frame) |
 | `wupa` | — | WUPA (7-bit short frame) |
 | `halt` | — | HALT command |
-| `select` | `cl_level` (int), `uid` (hex) | SELECT command |
-| `anticoll` | `cl_level`?, `nvb`?, `uid_prefix`? (hex) | Anti-collision |
 | `field_on` | — | Turn on RF field |
 | `field_off` | — | Turn off RF field |
 | `wait` | `ms` (int) | Wait for N milliseconds |
 
 ### Expect Matching
 
-Data ops (`transceive`, `find`, `reqa`, `wupa`, `select`, `anticoll`) support `expect`, `expect_bits`, and `on_mismatch`:
+Data ops (`transceive`, `active`, `reqa`, `wupa`) support `expect`, `expect_bits`, and `on_mismatch`:
 
 ```json
 [
@@ -79,12 +75,10 @@ The script stops on the first error or `on_mismatch: "stop"`.
 ```
 list_readers()
 connect(port="COM20", reader_type="pn532")
-find()
+active()
 transceive(data="6007", last_tx_bits=7, tx_crc=false, rx_crc=false)
 reqa()
 wupa()
-select(cl_level=1, uid="04AABBCCDD77")
-anticoll(cl_level=1)
 halt()
 field_off()
 trace_get()
