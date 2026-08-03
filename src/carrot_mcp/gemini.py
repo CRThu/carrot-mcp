@@ -1,7 +1,7 @@
-"""MiMoCode MCP config.
+"""Gemini / Antigravity MCP config.
 
-Config path: ~/.config/mimocode/mimocode.jsonc
-Backup path: %APPDATA%/carrot-mcp/agents/mimocode/
+Config path: ~/.gemini/config/mcp_config.json
+Backup path: %APPDATA%/carrot-mcp/agents/gemini/
 """
 
 import json
@@ -9,11 +9,11 @@ from pathlib import Path
 
 from carrot_mcp.backup import backup_config
 
-CONFIG = Path.home() / ".config" / "mimocode" / "mimocode.jsonc"
+CONFIG = Path.home() / ".gemini" / "config" / "mcp_config.json"
 
 
 def is_available() -> bool:
-    return CONFIG.parent.exists()
+    return CONFIG.parent.parent.exists() or CONFIG.exists()
 
 
 def _ensure() -> None:
@@ -30,8 +30,7 @@ def _load() -> dict:
         return {}
     text = "\n".join(l for l in text.splitlines() if not l.lstrip().startswith("//"))
     try:
-        data = json.loads(text)
-        return data if isinstance(data, dict) else {}
+        return json.loads(text)
     except (json.JSONDecodeError, ValueError):
         return {}
 
@@ -41,19 +40,19 @@ def _dump(data: dict) -> str:
 
 
 def backup() -> str:
-    return backup_config("mimocode", CONFIG)
+    return backup_config("gemini", CONFIG)
 
 
 def list_carrot() -> dict:
-    return {k: v for k, v in _load().get("mcp", {}).items() if k.startswith("carrot-")}
+    return {k: v for k, v in _load().get("mcpServers", {}).items() if k.startswith("carrot-")}
 
 
 def list_carrot_local() -> dict:
-    return {k: v for k, v in list_carrot().items() if v.get("type") != "remote"}
+    return {k: v for k, v in list_carrot().items() if v.get("type") != "http"}
 
 
 def get_env(config: dict) -> dict:
-    return config.get("environment")
+    return config.get("env")
 
 
 def add(name: str, env: dict = None, use_uvx: bool = False) -> str:
@@ -62,18 +61,16 @@ def add(name: str, env: dict = None, use_uvx: bool = False) -> str:
     c = _load()
     key = f"carrot-{name}"
     if use_uvx:
-        c.setdefault("mcp", {})[key] = {
-            "type": "local",
-            "command": ["uvx", f"carrot-mcp-{name}@latest"],
-            "enabled": True,
-            "environment": env or {},
+        c.setdefault("mcpServers", {})[key] = {
+            "command": "uvx",
+            "args": [f"carrot-mcp-{name}@latest"],
+            "env": env or {},
         }
     else:
-        c.setdefault("mcp", {})[key] = {
-            "type": "local",
-            "command": ["carrot-mcp", "run", name],
-            "enabled": True,
-            "environment": env or {},
+        c.setdefault("mcpServers", {})[key] = {
+            "command": "carrot-mcp",
+            "args": ["run", name],
+            "env": env or {},
         }
     CONFIG.write_text(_dump(c), "utf-8")
     return b
@@ -83,6 +80,7 @@ def remove(name: str) -> str:
     b = backup()
     c = _load()
     key = f"carrot-{name}" if not name.startswith("carrot-") else name
-    del c["mcp"][key]
+    if "mcpServers" in c and key in c["mcpServers"]:
+        del c["mcpServers"][key]
     CONFIG.write_text(_dump(c), "utf-8")
     return b

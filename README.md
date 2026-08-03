@@ -125,8 +125,8 @@ carrot-mcp run sys
 carrot-mcp mcp add
 
 # Add to specific agent(s)
-carrot-mcp mcp add claude
-carrot-mcp mcp add claude mimocode
+carrot-mcp mcp add gemini
+carrot-mcp mcp add claude mimocode opencode gemini
 
 # Force uvx mode (auto-update)
 carrot-mcp mcp add --uvx

@@ -25,9 +25,15 @@ def _ensure() -> None:
 def _load() -> dict:
     if not CONFIG.exists():
         return {}
-    text = CONFIG.read_text("utf-8")
+    text = CONFIG.read_text("utf-8").strip()
+    if not text:
+        return {}
     text = "\n".join(l for l in text.splitlines() if not l.lstrip().startswith("//"))
-    return json.loads(text)
+    try:
+        data = json.loads(text)
+        return data if isinstance(data, dict) else {}
+    except (json.JSONDecodeError, ValueError):
+        return {}
 
 
 def _dump(data: dict) -> str:

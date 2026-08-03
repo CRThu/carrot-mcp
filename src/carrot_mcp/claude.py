@@ -19,7 +19,15 @@ def is_available() -> bool:
 def _load() -> dict:
     if not CONFIG.exists():
         return {}
-    return json.loads(CONFIG.read_text("utf-8"))
+    text = CONFIG.read_text("utf-8").strip()
+    if not text:
+        return {}
+    text = "\n".join(l for l in text.splitlines() if not l.lstrip().startswith("//"))
+    try:
+        data = json.loads(text)
+        return data if isinstance(data, dict) else {}
+    except (json.JSONDecodeError, ValueError):
+        return {}
 
 
 def _dump(data: dict) -> str:

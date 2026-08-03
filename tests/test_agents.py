@@ -81,6 +81,17 @@ class TestClaudeConfig:
         assert get_env({"env": {"KEY": "val"}}) == {"KEY": "val"}
         assert get_env({}) is None
 
+    @patch("carrot_mcp.claude.CONFIG")
+    def test_load_empty_or_invalid_file(self, mock_config):
+        mock_config.exists.return_value = True
+        mock_config.read_text.return_value = ""
+
+        from carrot_mcp.claude import _load
+        assert _load() == {}
+
+        mock_config.read_text.return_value = "invalid json content"
+        assert _load() == {}
+
 
 class TestMiMoCodeConfig:
     @patch("carrot_mcp.mimocode.backup_config", return_value="/tmp/test/backup.json")
@@ -167,6 +178,17 @@ class TestMiMoCodeConfig:
         from carrot_mcp.mimocode import _load
         result = _load()
         assert result == {"mcp": {}}
+
+    @patch("carrot_mcp.mimocode.CONFIG")
+    def test_load_empty_or_invalid_file(self, mock_config):
+        mock_config.exists.return_value = True
+        mock_config.read_text.return_value = ""
+
+        from carrot_mcp.mimocode import _load
+        assert _load() == {}
+
+        mock_config.read_text.return_value = "invalid json content"
+        assert _load() == {}
 
 
 class TestOpenCodeConfig:
@@ -256,6 +278,17 @@ class TestOpenCodeConfig:
         assert result == {"mcp": {}}
 
     @patch("carrot_mcp.opencode.CONFIG")
+    def test_load_empty_or_invalid_file(self, mock_config):
+        mock_config.exists.return_value = True
+        mock_config.read_text.return_value = ""
+
+        from carrot_mcp.opencode import _load
+        assert _load() == {}
+
+        mock_config.read_text.return_value = "invalid json content"
+        assert _load() == {}
+
+    @patch("carrot_mcp.opencode.CONFIG")
     def test_ensure_creates_with_schema(self, mock_config):
         mock_config.exists.return_value = False
         mock_config.parent.exists.return_value = True
@@ -266,3 +299,94 @@ class TestOpenCodeConfig:
         mock_config.write_text.assert_called_once()
         written = json.loads(mock_config.write_text.call_args[0][0])
         assert written["$schema"] == "https://opencode.ai/config.json"
+
+
+class TestGeminiConfig:
+    @patch("carrot_mcp.gemini.backup_config", return_value="/tmp/test/backup.json")
+    @patch("carrot_mcp.gemini.CONFIG")
+    def test_add_new_server(self, mock_config, mock_backup):
+        mock_config.exists.return_value = True
+        mock_config.parent.parent.exists.return_value = True
+        mock_config.read_text.return_value = json.dumps({"mcpServers": {}})
+
+        from carrot_mcp.gemini import add
+        add("pdf")
+
+        mock_config.write_text.assert_called_once()
+        written = json.loads(mock_config.write_text.call_args[0][0])
+        assert "carrot-pdf" in written["mcpServers"]
+        assert written["mcpServers"]["carrot-pdf"]["command"] == "carrot-mcp"
+        assert written["mcpServers"]["carrot-pdf"]["args"] == ["run", "pdf"]
+
+    @patch("carrot_mcp.gemini.backup_config", return_value="/tmp/test/backup.json")
+    @patch("carrot_mcp.gemini.CONFIG")
+    def test_add_preserves_env(self, mock_config, mock_backup):
+        mock_config.exists.return_value = True
+        mock_config.parent.parent.exists.return_value = True
+        existing = {"mcpServers": {"carrot-pdf": {"env": {"API_KEY": "abc123"}}}}
+        mock_config.read_text.return_value = json.dumps(existing)
+
+        from carrot_mcp.gemini import add
+        add("pdf", env={"API_KEY": "abc123"})
+
+        written = json.loads(mock_config.write_text.call_args[0][0])
+        assert written["mcpServers"]["carrot-pdf"]["env"]["API_KEY"] == "abc123"
+
+    @patch("carrot_mcp.gemini.backup_config", return_value="/tmp/test/backup.json")
+    @patch("carrot_mcp.gemini.CONFIG")
+    def test_remove_server(self, mock_config, mock_backup):
+        mock_config.exists.return_value = True
+        existing = {"mcpServers": {"carrot-pdf": {"command": "uvx"}}}
+        mock_config.read_text.return_value = json.dumps(existing)
+
+        from carrot_mcp.gemini import remove
+        remove("pdf")
+
+        mock_config.write_text.assert_called_once()
+        written = json.loads(mock_config.write_text.call_args[0][0])
+        assert "carrot-pdf" not in written["mcpServers"]
+
+    @patch("carrot_mcp.gemini._load")
+    def test_list_carrot(self, mock_load):
+        mock_load.return_value = {
+            "mcpServers": {
+                "carrot-pdf": {"command": "uvx"},
+                "other-server": {"command": "uvx"},
+            }
+        }
+
+        from carrot_mcp.gemini import list_carrot
+        result = list_carrot()
+        assert "carrot-pdf" in result
+        assert "other-server" not in result
+
+    @patch("carrot_mcp.gemini._load")
+    def test_list_carrot_local_skips_http(self, mock_load):
+        mock_load.return_value = {
+            "mcpServers": {
+                "carrot-pdf": {"command": "uvx"},
+                "carrot-remote": {"type": "http", "url": "https://example.com"},
+            }
+        }
+
+        from carrot_mcp.gemini import list_carrot_local
+        result = list_carrot_local()
+        assert "carrot-pdf" in result
+        assert "carrot-remote" not in result
+
+    def test_get_env(self):
+        from carrot_mcp.gemini import get_env
+        assert get_env({"env": {"KEY": "val"}}) == {"KEY": "val"}
+        assert get_env({}) is None
+
+    @patch("carrot_mcp.gemini.CONFIG")
+    def test_load_empty_or_invalid_file(self, mock_config):
+        mock_config.exists.return_value = True
+        mock_config.read_text.return_value = ""
+
+        from carrot_mcp.gemini import _load
+        assert _load() == {}
+
+        mock_config.read_text.return_value = "invalid json content"
+        assert _load() == {}
+

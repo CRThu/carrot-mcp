@@ -349,6 +349,7 @@ CLI manages MCP server configs for different agents via entry points.
 | claude | `~/.claude.json` | `%APPDATA%/carrot-mcp/agents/claude/` | `env` |
 | mimocode | `~/.config/mimocode/mimocode.jsonc` | `%APPDATA%/carrot-mcp/agents/mimocode/` | `environment` |
 | opencode | `~/.config/opencode/opencode.jsonc` | `%APPDATA%/carrot-mcp/agents/opencode/` | `environment` |
+| gemini | `~/.gemini/config/mcp_config.json` | `%APPDATA%/carrot-mcp/agents/gemini/` | `env` |
 
 **CLI commands:**
 ```bash
@@ -368,6 +369,7 @@ carrot-mcp mcp remove [agent ...]  # Remove all carrot servers from agents (defa
 **Agent detection:**
 - claude: checks if `~/.claude.json` exists
 - mimocode/opencode: checks if parent directory exists (creates config with `$schema` if missing)
+- gemini: checks if `~/.gemini` directory or `mcp_config.json` exists
 
 **Env preservation:**
 - When adding servers, existing `env`/`environment` configs are preserved
