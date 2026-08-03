@@ -9,7 +9,7 @@ from importlib.metadata import version as pkg_version
 
 import pymupdf
 import pymupdf4llm
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
 from mcp.types import ImageContent, TextContent
 
 from carrot_mcp_pdf.cache import (

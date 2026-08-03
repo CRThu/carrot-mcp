@@ -1,4 +1,4 @@
-"""Tests for Office MCP server registration and metadata."""
+import asyncio
 
 from carrot_mcp_office.server import mcp, version
 
@@ -15,7 +15,7 @@ def test_mcp_server_name():
 
 
 def test_mcp_tools_registered():
-    tool_names = [t.name for t in mcp._tool_manager.list_tools()]
+    tool_names = [t.name for t in asyncio.run(mcp.list_tools())]
     expected = [
         "version",
         "workbook_metadata",

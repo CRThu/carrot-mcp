@@ -7,7 +7,7 @@ from collections import deque
 from importlib.metadata import version as pkg_version
 
 import nfc
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
 from nfc import trace as nfc_trace
 from nfctester.registry import CardReaderRegistry, TransportRegistry
 from nfctester.trace import TraceEvent

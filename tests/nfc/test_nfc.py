@@ -1,5 +1,6 @@
 """Tests for Carrot MCP NFC Server."""
 
+import asyncio
 from unittest.mock import MagicMock, patch
 
 import carrot_mcp_nfc.server as srv
@@ -265,7 +266,7 @@ def test_mcp_server_name():
 
 
 def test_mcp_tools_registered():
-    tool_names = [t.name for t in mcp._tool_manager.list_tools()]
+    tool_names = [t.name for t in asyncio.run(mcp.list_tools())]
     expected = [
         "version", "list_readers", "connect", "disconnect", "active",
         "transceive", "reqa", "wupa", "halt",

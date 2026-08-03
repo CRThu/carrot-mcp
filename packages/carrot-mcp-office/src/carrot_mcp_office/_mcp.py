@@ -1,6 +1,6 @@
 """Shared FastMCP instance for carrot-mcp-office."""
 
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
 
 from carrot_mcp_office.backup import save_version
 

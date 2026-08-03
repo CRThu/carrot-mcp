@@ -1,5 +1,6 @@
 """Tests for carrot_mcp_pdf.server module."""
 
+import asyncio
 import base64
 import json
 from unittest.mock import MagicMock, patch
@@ -30,7 +31,7 @@ def test_mcp_server_name():
 
 
 def test_mcp_tools_registered():
-    tool_names = [t.name for t in mcp._tool_manager.list_tools()]
+    tool_names = [t.name for t in asyncio.run(mcp.list_tools())]
     assert "version" in tool_names
     assert "get_toc" in tool_names
     assert "get_pages" in tool_names

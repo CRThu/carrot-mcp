@@ -1,5 +1,6 @@
 """Tests for carrot_mcp_sys.server module."""
 
+import asyncio
 import json
 from unittest.mock import MagicMock, patch
 
@@ -44,7 +45,7 @@ def test_mcp_server_name():
 
 
 def test_mcp_tools_registered():
-    tool_names = [t.name for t in mcp._tool_manager.list_tools()]
+    tool_names = [t.name for t in asyncio.run(mcp.list_tools())]
     assert "version" in tool_names
     assert "list_monitors" in tool_names
     assert "screenshot" in tool_names

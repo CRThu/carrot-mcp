@@ -11,7 +11,7 @@ from typing import Any, Optional
 
 import serial
 import serial.tools.list_ports
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
 
 from .channel import Channel
 from .logger import HistoryLogger

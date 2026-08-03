@@ -5,7 +5,7 @@ description = "Carrot MCP Office Server"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "mcp>=1.28.0",
+    "fastmcp>=0.1.0",
     "openpyxl>=3.1.0",
     "python-docx>=1.1.0",
 ]

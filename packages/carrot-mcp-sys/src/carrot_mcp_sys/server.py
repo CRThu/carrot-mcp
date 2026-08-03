@@ -9,7 +9,7 @@ from typing import Optional
 
 import mss
 import mss.tools
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
 from mcp.types import ImageContent, TextContent
 
 mcp = FastMCP("carrot-mcp-sys")
