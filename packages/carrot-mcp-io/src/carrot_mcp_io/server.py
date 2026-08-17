@@ -26,7 +26,7 @@ _loggers: dict[str, HistoryLogger] = {}
 def _encode(data: bytes, fmt: str) -> str:
     if fmt == "hex":
         return data.hex().upper()
-    return repr(data.decode("ascii", errors="replace"))
+    return data.decode("ascii", errors="replace")
 
 
 def _decode(data: str, fmt: str) -> bytes:

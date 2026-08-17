@@ -79,19 +79,19 @@ def test_encode_hex_empty():
 
 
 def test_encode_ascii_printable():
-    assert _encode(b"Hello", "ascii") == "'Hello'"
+    assert _encode(b"Hello", "ascii") == "Hello"
 
 
 def test_encode_ascii_newline():
-    assert _encode(b"Hello\nWorld", "ascii") == "'Hello\\nWorld'"
+    assert _encode(b"Hello\nWorld", "ascii") == "Hello\nWorld"
 
 
 def test_encode_ascii_null():
-    assert _encode(b"\x00", "ascii") == "'\\x00'"
+    assert _encode(b"\x00", "ascii") == "\x00"
 
 
 def test_encode_ascii_mixed():
-    assert _encode(b"\x41\x00\x0a", "ascii") == "'A\\x00\\n'"
+    assert _encode(b"\x41\x00\x0a", "ascii") == "A\x00\n"
 
 
 def test_decode_hex():
@@ -186,7 +186,7 @@ def test_format_result_hex():
 
 def test_format_result_ascii():
     result = _format_result(b"AB", "ascii")
-    assert result == {"length": 2, "data": "'AB'"}
+    assert result == {"length": 2, "data": "AB"}
 
 
 def test_format_result_empty():
@@ -444,7 +444,7 @@ def test_read_fmt_ascii():
     ch = _make_mock_channel("COM3")
     ch._rx.append(b"AB")
     result = read("COM3", fmt="ascii", timeout=0)
-    assert result["data"] == "'AB'"
+    assert result["data"] == "AB"
 
 
 def test_read_with_timeout_override():
