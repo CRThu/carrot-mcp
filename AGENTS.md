@@ -203,8 +203,8 @@ Cache Layer (cache.py — JSON: %APPDATA%/carrot-mcp/pdf/<hash>.json)
 |------|-------------|
 | `inspect` | Inspect document structure (paragraphs, tables, images, styles). Only returns non-empty paragraphs. Accepts `.doc` (auto-converted). |
 | `get_outline` | Get document outline as tree + flat list. Use flat array indices (0-based position) with `get_content`. Accepts `.doc`. |
-| `get_content` | Get paragraphs, tables, and images by `section` (flat outline indices) or `paragraph` (document paragraph indices). Accepts int (single index), str (range like "0-4,6,8"), or list of int/str. Set `text_only=true` for leaner output. Accepts `.doc`. |
-| `get_table` | Read table content as 2D array. Accepts `.doc`. |
+| `get_content` | Get paragraphs, tables, and images by `heading` (title match), `section` (flat outline indices), or `paragraph` (document paragraph indices). Default returns high-density Markdown (`format="markdown"`), or structured metadata for precision editing (`format="json"`). Accepts `.doc`. |
+| `get_table` | Read table content as Markdown table (default) or 2D array (`format='json'`). Supports `row_range` slicing. Accepts `.doc`. |
 | `insert_para` | Insert a paragraph |
 | `modify_para` | Modify paragraph text |
 | `format_para` | Format a paragraph (style, alignment, font) |
@@ -215,7 +215,7 @@ Cache Layer (cache.py — JSON: %APPDATA%/carrot-mcp/pdf/<hash>.json)
 | `delete_table` | Delete a table |
 | `insert_image` | Insert an image |
 | `delete_image` | Delete an inline image |
-| `grep` | Search for exact substring in paragraphs. Case-insensitive by default, or regex. Returns matches with index, style, and surrounding context. Accepts `.doc`. |
+| `grep` | Search for exact substring or regex across paragraphs and table cells. Returns matches with heading path hierarchy, table header, row data, and surrounding context. Accepts `.doc`. |
 
 All Word tools accept `.doc`/`.docx` files (`.doc` auto-converted on Windows).
 
@@ -224,11 +224,11 @@ All Word tools accept `.doc`/`.docx` files (`.doc` auto-converted on Windows).
 | Tool | Description |
 |------|-------------|
 | `workbook_metadata` | Get workbook metadata (sheet names, properties) |
-| `workbook_grep` | Search for exact substring in cell values. Case-insensitive by default, or regex. |
+| `workbook_grep` | Search for exact substring in cell values across all sheets (or specific `sheet`). Case-insensitive by default, or regex. |
 | `create_sheet` / `rename_sheet` / `delete_sheet` | Sheet management |
 | `insert_rows` / `delete_rows` | Row operations |
 | `insert_columns` / `delete_columns` | Column operations |
-| `read_range` / `write_range` / `copy_range` / `delete_range` | Range operations |
+| `read_range` / `write_range` / `copy_range` / `delete_range` | Range operations (`read_range` supports `format="markdown"` default or `format="json"`) |
 | `read_chart` / `write_chart` | Chart operations |
 | `format_range` | Format cells (font, color, alignment, merge/unmerge) |
 
@@ -241,15 +241,17 @@ Application Layer (MCP tools)
     ↓ inspect/get_outline/get_content/insert_*/modify_*/format_*/delete_*
 Word Layer (word.py — python-docx, heading hierarchy, content extraction)
 Excel Layer (excel.py — openpyxl, cell/range/chart operations)
+Shared Formatting Layer (_format.py — render_table_markdown, parse_index_range)
 Conversion Layer (convert.py — .doc/.xls → .docx/.xlsx via win32com, reuses existing .docx/.xlsx)
 Backup Layer (backup.py — auto-versioning on every write)
 ```
 
-- `get_outline` extracts Heading 1–9 styles into a hierarchical tree with `children` and a flat list with `parent` tracking
-- `get_content` takes flat array position indices (0, 1, 2, ...) from `get_outline`'s `flat` return — NOT the `index` field in each node (that's the paragraph position in the document). Accepts int (single index), str (range like `"0-9"` or comma-separated `"0-4,6,8"`), or list of int/str (`[0, "2-5", 8]`). Set `text_only=true` for leaner output: paragraphs as plain strings, tables as 2D arrays directly, omit paragraph_range/image_count. Returns paragraphs (non-empty text + index), tables (2D cell values), and images as ImageContent attachments.
-- `get_content` also supports `paragraph` parameter for direct document paragraph indices (0-based position). Mutually exclusive with `section` — use `section` when working with outline structure, `paragraph` when you have specific paragraph positions from grep/inspect results.
-- Table position detection walks `doc.element.body` children to find the XML index, matching against paragraph range
-- `_heading_level()` parses "Heading N" style names; non-standard heading styles are ignored
+- `get_outline` extracts outline hierarchies using OpenXML `w:outlineLvl` (paragraph and style level) and bilingual heading names (`Heading 1-9`, `标题 1-9`) into a hierarchical tree with `children` and a flat list with `parent` tracking
+- `get_content` supports `heading` parameter for title-based retrieval (exact match prioritized, followed by case-insensitive substring match). Also supports `section` (indices into `flat` outline) or `paragraph` (0-based paragraph index). Defaults to `format="markdown"` for maximum token density, or `format="json"` with structured `sections`/`paragraphs` (including indices, styles, and ranges for editing coordinates). Images are returned as ImageContent attachments.
+- `get_table` and `read_range` return Markdown table formatting by default (`format="markdown"`), or raw arrays (`format="json"`). `get_table` supports `row_range` slicing (e.g. `"0-10"` or `"0, 5-8"`, preserving header).
+- `grep` searches both `doc.paragraphs` and `doc.tables` cells, returning matched elements with hierarchical `heading_path` (chapter context), and for tables, the table `header` and full `row_data`.
+- `workbook_grep` searches across all workbook sheets by default if `sheet` is omitted.
+- `insert_para` supports multi-line strings (`\n`) and string lists, inserting multiple consecutive paragraphs seamlessly.
 
 ## NFC MCP Server Tools
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 
 import openpyxl
 from openpyxl.utils import cell as xl_cell
@@ -10,6 +11,7 @@ from openpyxl.chart import BarChart, LineChart, PieChart, ScatterChart, Referenc
 from openpyxl.styles import Font, Alignment
 
 from carrot_mcp_office._mcp import mcp, _save_and_return
+from carrot_mcp_office._format import render_table_markdown
 from carrot_mcp_office.convert import ensure_xlsx_format
 
 
@@ -69,26 +71,23 @@ def workbook_metadata(path: str) -> dict:
 
 
 @mcp.tool()
-def workbook_grep(path: str, sheet: str, pattern: str, regex: bool = False) -> dict:
-    """Search for exact substring in cell values. NOT a semantic/fuzzy search.
-
-    This is a literal text grep, not a natural language search engine.
-    You must provide the exact text (or regex pattern) that appears in a cell.
+def workbook_grep(path: str, pattern: str, sheet: str | None = None, regex: bool = False) -> dict:
+    """Search for exact substring in cell values across sheet(s).
 
     Args:
         path: Absolute path to the .xls/.xlsx file.
-        sheet: Sheet name to search in.
-        pattern: Exact substring to match (case-insensitive). Use regex=True
-                 for regular expression patterns.
+        pattern: Exact substring to match (case-insensitive) or regex pattern.
+        sheet: Optional sheet name to search in. If omitted, searches all sheets.
         regex: If true, treat pattern as a Python regular expression.
     """
     try:
-        import re
         wb = openpyxl.load_workbook(path, read_only=True)
         try:
-            if sheet not in wb.sheetnames:
-                return {"status": "error", "message": f"Sheet '{sheet}' not found"}
-            ws = wb[sheet]
+            target_sheets = [sheet] if sheet is not None else wb.sheetnames
+            for s in target_sheets:
+                if s not in wb.sheetnames:
+                    return {"status": "error", "message": f"Sheet '{s}' not found"}
+
             if regex:
                 try:
                     regex_pattern = re.compile(pattern, re.IGNORECASE)
@@ -99,12 +98,23 @@ def workbook_grep(path: str, sheet: str, pattern: str, regex: bool = False) -> d
             else:
                 def _match(val: str) -> bool:
                     return pattern.lower() in val.lower()
+
             results = []
-            for row in ws.iter_rows():
-                for cell in row:
-                    if cell.value is not None and _match(str(cell.value)):
-                        results.append({"cell": cell.coordinate, "value": cell.value})
-            return {"status": "ok", "sheet": sheet, "pattern": pattern, "regex": regex, "results": results, "count": len(results)}
+            for s in target_sheets:
+                ws = wb[s]
+                for row in ws.iter_rows():
+                    for cell in row:
+                        if cell.value is not None and _match(str(cell.value)):
+                            results.append({"sheet": s, "cell": cell.coordinate, "value": cell.value})
+            return {
+                "status": "ok",
+                "pattern": pattern,
+                "sheet": sheet,
+                "sheets_searched": target_sheets,
+                "regex": regex,
+                "results": results,
+                "count": len(results),
+            }
         finally:
             wb.close()
     except Exception as e:
@@ -309,7 +319,7 @@ def delete_columns(path: str, sheet: str, start: int, count: int = 1) -> dict:
 
 
 @mcp.tool()
-def read_range(path: str, sheet: str, start: str, end: str | None = None) -> dict:
+def read_range(path: str, sheet: str, start: str, end: str | None = None, format: str = "markdown") -> dict:
     """Read cell values from a range.
 
     Args:
@@ -317,6 +327,7 @@ def read_range(path: str, sheet: str, start: str, end: str | None = None) -> dic
         sheet: Sheet name.
         start: Start cell reference (e.g. "A1").
         end: End cell reference (e.g. "B2"). None reads single cell.
+        format: Output presentation format ("markdown" or "json", default "markdown").
     """
     try:
         wb = openpyxl.load_workbook(path, read_only=True)
@@ -331,7 +342,18 @@ def read_range(path: str, sheet: str, start: str, end: str | None = None) -> dic
             data = []
             for row in ws.iter_rows(min_row=min_row, min_col=min_col, max_row=max_row, max_col=max_col):
                 data.append([cell.value for cell in row])
-            return {"status": "ok", "sheet": sheet, "range": f"{start}:{end}", "data": data}
+            res = {
+                "status": "ok",
+                "sheet": sheet,
+                "range": f"{start}:{end}",
+                "rows": len(data),
+                "cols": len(data[0]) if data else 0,
+            }
+            if format == "markdown":
+                res["markdown"] = render_table_markdown(data)
+            else:
+                res["data"] = data
+            return res
         finally:
             wb.close()
     except Exception as e:

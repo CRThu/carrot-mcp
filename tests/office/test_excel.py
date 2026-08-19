@@ -162,9 +162,19 @@ def test_write_read_range():
     try:
         create_sheet(path, "Data")
         write_range(path, "Data", "A1", [["Name", "Score"], ["Alice", 95], ["Bob", 87]])
-        result = read_range(path, "Data", "A1", "B3")
-        assert result["status"] == "ok"
-        assert result["data"] == [["Name", "Score"], ["Alice", 95], ["Bob", 87]]
+
+        # Default markdown format
+        result_md = read_range(path, "Data", "A1", "B3")
+        assert result_md["status"] == "ok"
+        assert result_md["rows"] == 3
+        assert result_md["cols"] == 2
+        assert "| Name | Score |" in result_md["markdown"]
+        assert "| Alice | 95 |" in result_md["markdown"]
+
+        # Structured json format
+        result_json = read_range(path, "Data", "A1", "B3", format="json")
+        assert result_json["status"] == "ok"
+        assert result_json["data"] == [["Name", "Score"], ["Alice", 95], ["Bob", 87]]
     finally:
         _cleanup(path)
         if os.path.exists(path):
@@ -241,7 +251,7 @@ def test_delete_rows():
         create_sheet(path, "Data")
         write_range(path, "Data", "A1", [["A"], ["B"], ["C"]])
         delete_rows(path, "Data", 2, 1)
-        result = read_range(path, "Data", "A1", "A2")
+        result = read_range(path, "Data", "A1", "A2", format="json")
         assert result["status"] == "ok"
         assert result["data"] == [["A"], ["C"]]
     finally:
@@ -283,7 +293,7 @@ def test_insert_delete_rows():
         create_sheet(path, "Data")
         write_range(path, "Data", "A1", [["A"], ["B"], ["C"]])
         insert_rows(path, "Data", 2, 1)
-        result = read_range(path, "Data", "A1", "A4")
+        result = read_range(path, "Data", "A1", "A4", format="json")
         assert result["status"] == "ok"
         assert result["data"] == [["A"], [None], ["B"], ["C"]]
     finally:
@@ -298,7 +308,7 @@ def test_insert_delete_columns():
         create_sheet(path, "Data")
         write_range(path, "Data", "A1", [["A", "B"]])
         insert_columns(path, "Data", 2, 1)
-        result = read_range(path, "Data", "A1", "C1")
+        result = read_range(path, "Data", "A1", "C1", format="json")
         assert result["status"] == "ok"
         assert result["data"] == [["A", None, "B"]]
     finally:
@@ -313,7 +323,7 @@ def test_copy_range():
         create_sheet(path, "Data")
         write_range(path, "Data", "A1", [["X", "Y"]])
         copy_range(path, "Data", "A1", "B1", "D1")
-        result = read_range(path, "Data", "D1", "E1")
+        result = read_range(path, "Data", "D1", "E1", format="json")
         assert result["status"] == "ok"
         assert result["data"] == [["X", "Y"]]
     finally:
@@ -328,7 +338,7 @@ def test_delete_range():
         create_sheet(path, "Data")
         write_range(path, "Data", "A1", [["X", "Y"]])
         delete_range(path, "Data", "A1", "B1")
-        result = read_range(path, "Data", "A1", "B1")
+        result = read_range(path, "Data", "A1", "B1", format="json")
         assert result["status"] == "ok"
         assert result["data"] == [[None, None]]
     finally:
@@ -380,10 +390,30 @@ def test_workbook_grep():
     try:
         create_sheet(path, "Data")
         write_range(path, "Data", "A1", [["Apple"], ["Banana"], ["Cherry"]])
-        result = workbook_grep(path, "Data", "ana")
+        result = workbook_grep(path, "ana", sheet="Data")
         assert result["status"] == "ok"
         assert result["count"] == 1
+        assert result["results"][0]["sheet"] == "Data"
         assert result["results"][0]["cell"] == "A2"
+    finally:
+        _cleanup(path)
+        if os.path.exists(path):
+            os.unlink(path)
+
+
+def test_workbook_grep_all_sheets():
+    path = _xlsx()
+    try:
+        create_sheet(path, "SheetA")
+        write_range(path, "SheetA", "A1", [["Apple"]])
+        create_sheet(path, "SheetB")
+        write_range(path, "SheetB", "A1", [["Pineapple"]])
+        result = workbook_grep(path, "apple")
+        assert result["status"] == "ok"
+        assert "SheetA" in result["sheets_searched"]
+        assert "SheetB" in result["sheets_searched"]
+        sheets = {r["sheet"] for r in result["results"]}
+        assert sheets == {"SheetA", "SheetB"}
     finally:
         _cleanup(path)
         if os.path.exists(path):
@@ -395,7 +425,7 @@ def test_workbook_grep_no_results():
     try:
         create_sheet(path, "Data")
         write_range(path, "Data", "A1", [["Apple"]])
-        result = workbook_grep(path, "Data", "xyz")
+        result = workbook_grep(path, "xyz", sheet="Data")
         assert result["status"] == "ok"
         assert result["count"] == 0
     finally:
@@ -409,7 +439,7 @@ def test_workbook_grep_regex():
     try:
         create_sheet(path, "Data")
         write_range(path, "Data", "A1", [["abc 123"], ["xyz 456"], ["abc 789"]])
-        result = workbook_grep(path, "Data", r"abc \d+", regex=True)
+        result = workbook_grep(path, r"abc \d+", sheet="Data", regex=True)
         assert result["status"] == "ok"
         assert result["count"] == 2
         assert result["regex"] is True
@@ -424,7 +454,7 @@ def test_workbook_grep_regex_invalid():
     try:
         create_sheet(path, "Data")
         write_range(path, "Data", "A1", [["test"]])
-        result = workbook_grep(path, "Data", r"[invalid", regex=True)
+        result = workbook_grep(path, r"[invalid", sheet="Data", regex=True)
         assert result["status"] == "error"
         assert "Invalid regex" in result["message"]
     finally:

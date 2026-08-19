@@ -19,7 +19,7 @@ Carrot MCP Office Server — Excel and Word automation via MCP.
 | Tool | Description |
 |------|-------------|
 | `workbook_metadata` | Get workbook metadata (sheet names, properties) |
-| `workbook_grep` | Search for exact substring in cell values. Case-insensitive by default, or regex. |
+| `workbook_grep` | Search for exact substring in cell values across all sheets (or specific `sheet`). Case-insensitive by default, or regex. |
 | `create_sheet` | Create a new sheet |
 | `rename_sheet` | Rename a sheet |
 | `delete_sheet` | Delete a sheet |
@@ -27,7 +27,7 @@ Carrot MCP Office Server — Excel and Word automation via MCP.
 | `delete_rows` | Delete rows from a sheet |
 | `insert_columns` | Insert columns into a sheet |
 | `delete_columns` | Delete columns from a sheet |
-| `read_range` | Read cell values from a range |
+| `read_range` | Read cell values from a range as Markdown table (`format="markdown"`, default) or 2D array (`format="json"`) |
 | `write_range` | Write a 2D array to a range (supports formulas) |
 | `copy_range` | Copy a range to another location |
 | `delete_range` | Clear cell contents in a range |
@@ -41,9 +41,9 @@ All Excel tools accept `.xls`/`.xlsx` files (`.xls` auto-converted on Windows).
 
 | Tool | Description |
 |------|-------------|
-| `inspect` | Inspect document structure (paragraphs, tables, images, styles). Only returns non-empty paragraphs. |
-| `get_table` | Read table content as 2D array. |
-| `insert_para` | Insert a paragraph |
+| `inspect` | Inspect document structure (paragraph count, table count and dimensions, image count, styles used). |
+| `get_table` | Read table content as Markdown table (default) or 2D array (`format="json"`). Supports `row_range` slicing. |
+| `insert_para` | Insert paragraph(s) with multi-line (`\n`) or string list support |
 | `modify_para` | Modify paragraph text |
 | `format_para` | Format a paragraph (style, alignment, font) |
 | `delete_para` | Delete a paragraph |
@@ -53,9 +53,9 @@ All Excel tools accept `.xls`/`.xlsx` files (`.xls` auto-converted on Windows).
 | `delete_table` | Delete a table |
 | `insert_image` | Insert an image |
 | `delete_image` | Delete an inline image |
-| `get_outline` | Get document outline as tree + flat list. Use flat array indices (0-based position) with `get_content`. |
-| `get_content` | Get paragraphs, tables, and images by `section` or `paragraph`. Accepts int (single index), str (range like "0-4,6,8"), list of int/str, or None. Set `text_only=true` for leaner output. |
-| `grep` | Search for exact substring in paragraphs. Case-insensitive by default, or regex. Returns matches with index, style, and surrounding context. |
+| `get_outline` | Get document outline as tree + flat list via OpenXML `w:outlineLvl` and bilingual heading recognition. Use flat array indices with `get_content`. |
+| `get_content` | Get paragraphs, tables, and images by `heading`, `section`, or `paragraph`. Returns clean Markdown (`format="markdown"`, default) or structured metadata for precision editing (`format="json"`). |
+| `grep` | Search for exact substring or regex across paragraphs and table cells. Returns matches with heading path hierarchy, table header, and row data. |
 
 All Word tools accept `.doc`/`.docx` files (`.doc` auto-converted on Windows).
 
